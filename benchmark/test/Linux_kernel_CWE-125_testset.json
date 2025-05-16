@@ -1,0 +1,1020 @@
+{
+    "CVE-2018-1093": {
+        "item": [
+            {
+                "cve_id": "CVE-2018-1093",
+                "code_before_change": "struct buffer_head *\next4_read_block_bitmap_nowait(struct super_block *sb, ext4_group_t block_group)\n{\n\tstruct ext4_group_desc *desc;\n\tstruct buffer_head *bh;\n\text4_fsblk_t bitmap_blk;\n\tint err;\n\n\tdesc = ext4_get_group_desc(sb, block_group, NULL);\n\tif (!desc)\n\t\treturn ERR_PTR(-EFSCORRUPTED);\n\tbitmap_blk = ext4_block_bitmap(sb, desc);\n\tbh = sb_getblk(sb, bitmap_blk);\n\tif (unlikely(!bh)) {\n\t\text4_error(sb, \"Cannot get buffer for block bitmap - \"\n\t\t\t   \"block_group = %u, block_bitmap = %llu\",\n\t\t\t   block_group, bitmap_blk);\n\t\treturn ERR_PTR(-ENOMEM);\n\t}\n\n\tif (bitmap_uptodate(bh))\n\t\tgoto verify;\n\n\tlock_buffer(bh);\n\tif (bitmap_uptodate(bh)) {\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\text4_lock_group(sb, block_group);\n\tif (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {\n\t\terr = ext4_init_block_bitmap(sb, bh, block_group, desc);\n\t\tset_bitmap_uptodate(bh);\n\t\tset_buffer_uptodate(bh);\n\t\tset_buffer_verified(bh);\n\t\text4_unlock_group(sb, block_group);\n\t\tunlock_buffer(bh);\n\t\tif (err) {\n\t\t\text4_error(sb, \"Failed to init block bitmap for group \"\n\t\t\t\t   \"%u: %d\", block_group, err);\n\t\t\tgoto out;\n\t\t}\n\t\tgoto verify;\n\t}\n\text4_unlock_group(sb, block_group);\n\tif (buffer_uptodate(bh)) {\n\t\t/*\n\t\t * if not uninit if bh is uptodate,\n\t\t * bitmap is also uptodate\n\t\t */\n\t\tset_bitmap_uptodate(bh);\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\t/*\n\t * submit the buffer_head for reading\n\t */\n\tset_buffer_new(bh);\n\ttrace_ext4_read_block_bitmap_load(sb, block_group);\n\tbh->b_end_io = ext4_end_bitmap_read;\n\tget_bh(bh);\n\tsubmit_bh(REQ_OP_READ, REQ_META | REQ_PRIO, bh);\n\treturn bh;\nverify:\n\terr = ext4_validate_block_bitmap(sb, desc, block_group, bh);\n\tif (err)\n\t\tgoto out;\n\treturn bh;\nout:\n\tput_bh(bh);\n\treturn ERR_PTR(err);\n}",
+                "code_after_change": "struct buffer_head *\next4_read_block_bitmap_nowait(struct super_block *sb, ext4_group_t block_group)\n{\n\tstruct ext4_group_desc *desc;\n\tstruct ext4_sb_info *sbi = EXT4_SB(sb);\n\tstruct buffer_head *bh;\n\text4_fsblk_t bitmap_blk;\n\tint err;\n\n\tdesc = ext4_get_group_desc(sb, block_group, NULL);\n\tif (!desc)\n\t\treturn ERR_PTR(-EFSCORRUPTED);\n\tbitmap_blk = ext4_block_bitmap(sb, desc);\n\tif ((bitmap_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||\n\t    (bitmap_blk >= ext4_blocks_count(sbi->s_es))) {\n\t\text4_error(sb, \"Invalid block bitmap block %llu in \"\n\t\t\t   \"block_group %u\", bitmap_blk, block_group);\n\t\treturn ERR_PTR(-EFSCORRUPTED);\n\t}\n\tbh = sb_getblk(sb, bitmap_blk);\n\tif (unlikely(!bh)) {\n\t\text4_error(sb, \"Cannot get buffer for block bitmap - \"\n\t\t\t   \"block_group = %u, block_bitmap = %llu\",\n\t\t\t   block_group, bitmap_blk);\n\t\treturn ERR_PTR(-ENOMEM);\n\t}\n\n\tif (bitmap_uptodate(bh))\n\t\tgoto verify;\n\n\tlock_buffer(bh);\n\tif (bitmap_uptodate(bh)) {\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\text4_lock_group(sb, block_group);\n\tif (desc->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {\n\t\terr = ext4_init_block_bitmap(sb, bh, block_group, desc);\n\t\tset_bitmap_uptodate(bh);\n\t\tset_buffer_uptodate(bh);\n\t\tset_buffer_verified(bh);\n\t\text4_unlock_group(sb, block_group);\n\t\tunlock_buffer(bh);\n\t\tif (err) {\n\t\t\text4_error(sb, \"Failed to init block bitmap for group \"\n\t\t\t\t   \"%u: %d\", block_group, err);\n\t\t\tgoto out;\n\t\t}\n\t\tgoto verify;\n\t}\n\text4_unlock_group(sb, block_group);\n\tif (buffer_uptodate(bh)) {\n\t\t/*\n\t\t * if not uninit if bh is uptodate,\n\t\t * bitmap is also uptodate\n\t\t */\n\t\tset_bitmap_uptodate(bh);\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\t/*\n\t * submit the buffer_head for reading\n\t */\n\tset_buffer_new(bh);\n\ttrace_ext4_read_block_bitmap_load(sb, block_group);\n\tbh->b_end_io = ext4_end_bitmap_read;\n\tget_bh(bh);\n\tsubmit_bh(REQ_OP_READ, REQ_META | REQ_PRIO, bh);\n\treturn bh;\nverify:\n\terr = ext4_validate_block_bitmap(sb, desc, block_group, bh);\n\tif (err)\n\t\tgoto out;\n\treturn bh;\nout:\n\tput_bh(bh);\n\treturn ERR_PTR(err);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -2,6 +2,7 @@\n ext4_read_block_bitmap_nowait(struct super_block *sb, ext4_group_t block_group)\n {\n \tstruct ext4_group_desc *desc;\n+\tstruct ext4_sb_info *sbi = EXT4_SB(sb);\n \tstruct buffer_head *bh;\n \text4_fsblk_t bitmap_blk;\n \tint err;\n@@ -10,6 +11,12 @@\n \tif (!desc)\n \t\treturn ERR_PTR(-EFSCORRUPTED);\n \tbitmap_blk = ext4_block_bitmap(sb, desc);\n+\tif ((bitmap_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||\n+\t    (bitmap_blk >= ext4_blocks_count(sbi->s_es))) {\n+\t\text4_error(sb, \"Invalid block bitmap block %llu in \"\n+\t\t\t   \"block_group %u\", bitmap_blk, block_group);\n+\t\treturn ERR_PTR(-EFSCORRUPTED);\n+\t}\n \tbh = sb_getblk(sb, bitmap_blk);\n \tif (unlikely(!bh)) {\n \t\text4_error(sb, \"Cannot get buffer for block bitmap - \"",
+                "function_modified_lines": {
+                    "added": [
+                        "\tstruct ext4_sb_info *sbi = EXT4_SB(sb);",
+                        "\tif ((bitmap_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||",
+                        "\t    (bitmap_blk >= ext4_blocks_count(sbi->s_es))) {",
+                        "\t\text4_error(sb, \"Invalid block bitmap block %llu in \"",
+                        "\t\t\t   \"block_group %u\", bitmap_blk, block_group);",
+                        "\t\treturn ERR_PTR(-EFSCORRUPTED);",
+                        "\t}"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "The ext4_valid_block_bitmap function in fs/ext4/balloc.c in the Linux kernel through 4.15.15 allows attackers to cause a denial of service (out-of-bounds read and system crash) via a crafted ext4 image because balloc.c and ialloc.c do not validate bitmap block numbers.",
+                "id": 1625
+            },
+            {
+                "cve_id": "CVE-2018-1093",
+                "code_before_change": "static struct buffer_head *\next4_read_inode_bitmap(struct super_block *sb, ext4_group_t block_group)\n{\n\tstruct ext4_group_desc *desc;\n\tstruct buffer_head *bh = NULL;\n\text4_fsblk_t bitmap_blk;\n\tint err;\n\n\tdesc = ext4_get_group_desc(sb, block_group, NULL);\n\tif (!desc)\n\t\treturn ERR_PTR(-EFSCORRUPTED);\n\n\tbitmap_blk = ext4_inode_bitmap(sb, desc);\n\tbh = sb_getblk(sb, bitmap_blk);\n\tif (unlikely(!bh)) {\n\t\text4_error(sb, \"Cannot read inode bitmap - \"\n\t\t\t    \"block_group = %u, inode_bitmap = %llu\",\n\t\t\t    block_group, bitmap_blk);\n\t\treturn ERR_PTR(-EIO);\n\t}\n\tif (bitmap_uptodate(bh))\n\t\tgoto verify;\n\n\tlock_buffer(bh);\n\tif (bitmap_uptodate(bh)) {\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\n\text4_lock_group(sb, block_group);\n\tif (desc->bg_flags & cpu_to_le16(EXT4_BG_INODE_UNINIT)) {\n\t\tmemset(bh->b_data, 0, (EXT4_INODES_PER_GROUP(sb) + 7) / 8);\n\t\text4_mark_bitmap_end(EXT4_INODES_PER_GROUP(sb),\n\t\t\t\t     sb->s_blocksize * 8, bh->b_data);\n\t\tset_bitmap_uptodate(bh);\n\t\tset_buffer_uptodate(bh);\n\t\tset_buffer_verified(bh);\n\t\text4_unlock_group(sb, block_group);\n\t\tunlock_buffer(bh);\n\t\treturn bh;\n\t}\n\text4_unlock_group(sb, block_group);\n\n\tif (buffer_uptodate(bh)) {\n\t\t/*\n\t\t * if not uninit if bh is uptodate,\n\t\t * bitmap is also uptodate\n\t\t */\n\t\tset_bitmap_uptodate(bh);\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\t/*\n\t * submit the buffer_head for reading\n\t */\n\ttrace_ext4_load_inode_bitmap(sb, block_group);\n\tbh->b_end_io = ext4_end_bitmap_read;\n\tget_bh(bh);\n\tsubmit_bh(REQ_OP_READ, REQ_META | REQ_PRIO, bh);\n\twait_on_buffer(bh);\n\tif (!buffer_uptodate(bh)) {\n\t\tput_bh(bh);\n\t\text4_error(sb, \"Cannot read inode bitmap - \"\n\t\t\t   \"block_group = %u, inode_bitmap = %llu\",\n\t\t\t   block_group, bitmap_blk);\n\t\treturn ERR_PTR(-EIO);\n\t}\n\nverify:\n\terr = ext4_validate_inode_bitmap(sb, desc, block_group, bh);\n\tif (err)\n\t\tgoto out;\n\treturn bh;\nout:\n\tput_bh(bh);\n\treturn ERR_PTR(err);\n}",
+                "code_after_change": "static struct buffer_head *\next4_read_inode_bitmap(struct super_block *sb, ext4_group_t block_group)\n{\n\tstruct ext4_group_desc *desc;\n\tstruct ext4_sb_info *sbi = EXT4_SB(sb);\n\tstruct buffer_head *bh = NULL;\n\text4_fsblk_t bitmap_blk;\n\tint err;\n\n\tdesc = ext4_get_group_desc(sb, block_group, NULL);\n\tif (!desc)\n\t\treturn ERR_PTR(-EFSCORRUPTED);\n\n\tbitmap_blk = ext4_inode_bitmap(sb, desc);\n\tif ((bitmap_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||\n\t    (bitmap_blk >= ext4_blocks_count(sbi->s_es))) {\n\t\text4_error(sb, \"Invalid inode bitmap blk %llu in \"\n\t\t\t   \"block_group %u\", bitmap_blk, block_group);\n\t\treturn ERR_PTR(-EFSCORRUPTED);\n\t}\n\tbh = sb_getblk(sb, bitmap_blk);\n\tif (unlikely(!bh)) {\n\t\text4_error(sb, \"Cannot read inode bitmap - \"\n\t\t\t    \"block_group = %u, inode_bitmap = %llu\",\n\t\t\t    block_group, bitmap_blk);\n\t\treturn ERR_PTR(-EIO);\n\t}\n\tif (bitmap_uptodate(bh))\n\t\tgoto verify;\n\n\tlock_buffer(bh);\n\tif (bitmap_uptodate(bh)) {\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\n\text4_lock_group(sb, block_group);\n\tif (desc->bg_flags & cpu_to_le16(EXT4_BG_INODE_UNINIT)) {\n\t\tmemset(bh->b_data, 0, (EXT4_INODES_PER_GROUP(sb) + 7) / 8);\n\t\text4_mark_bitmap_end(EXT4_INODES_PER_GROUP(sb),\n\t\t\t\t     sb->s_blocksize * 8, bh->b_data);\n\t\tset_bitmap_uptodate(bh);\n\t\tset_buffer_uptodate(bh);\n\t\tset_buffer_verified(bh);\n\t\text4_unlock_group(sb, block_group);\n\t\tunlock_buffer(bh);\n\t\treturn bh;\n\t}\n\text4_unlock_group(sb, block_group);\n\n\tif (buffer_uptodate(bh)) {\n\t\t/*\n\t\t * if not uninit if bh is uptodate,\n\t\t * bitmap is also uptodate\n\t\t */\n\t\tset_bitmap_uptodate(bh);\n\t\tunlock_buffer(bh);\n\t\tgoto verify;\n\t}\n\t/*\n\t * submit the buffer_head for reading\n\t */\n\ttrace_ext4_load_inode_bitmap(sb, block_group);\n\tbh->b_end_io = ext4_end_bitmap_read;\n\tget_bh(bh);\n\tsubmit_bh(REQ_OP_READ, REQ_META | REQ_PRIO, bh);\n\twait_on_buffer(bh);\n\tif (!buffer_uptodate(bh)) {\n\t\tput_bh(bh);\n\t\text4_error(sb, \"Cannot read inode bitmap - \"\n\t\t\t   \"block_group = %u, inode_bitmap = %llu\",\n\t\t\t   block_group, bitmap_blk);\n\t\treturn ERR_PTR(-EIO);\n\t}\n\nverify:\n\terr = ext4_validate_inode_bitmap(sb, desc, block_group, bh);\n\tif (err)\n\t\tgoto out;\n\treturn bh;\nout:\n\tput_bh(bh);\n\treturn ERR_PTR(err);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -2,6 +2,7 @@\n ext4_read_inode_bitmap(struct super_block *sb, ext4_group_t block_group)\n {\n \tstruct ext4_group_desc *desc;\n+\tstruct ext4_sb_info *sbi = EXT4_SB(sb);\n \tstruct buffer_head *bh = NULL;\n \text4_fsblk_t bitmap_blk;\n \tint err;\n@@ -11,6 +12,12 @@\n \t\treturn ERR_PTR(-EFSCORRUPTED);\n \n \tbitmap_blk = ext4_inode_bitmap(sb, desc);\n+\tif ((bitmap_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||\n+\t    (bitmap_blk >= ext4_blocks_count(sbi->s_es))) {\n+\t\text4_error(sb, \"Invalid inode bitmap blk %llu in \"\n+\t\t\t   \"block_group %u\", bitmap_blk, block_group);\n+\t\treturn ERR_PTR(-EFSCORRUPTED);\n+\t}\n \tbh = sb_getblk(sb, bitmap_blk);\n \tif (unlikely(!bh)) {\n \t\text4_error(sb, \"Cannot read inode bitmap - \"",
+                "function_modified_lines": {
+                    "added": [
+                        "\tstruct ext4_sb_info *sbi = EXT4_SB(sb);",
+                        "\tif ((bitmap_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||",
+                        "\t    (bitmap_blk >= ext4_blocks_count(sbi->s_es))) {",
+                        "\t\text4_error(sb, \"Invalid inode bitmap blk %llu in \"",
+                        "\t\t\t   \"block_group %u\", bitmap_blk, block_group);",
+                        "\t\treturn ERR_PTR(-EFSCORRUPTED);",
+                        "\t}"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "The ext4_valid_block_bitmap function in fs/ext4/balloc.c in the Linux kernel through 4.15.15 allows attackers to cause a denial of service (out-of-bounds read and system crash) via a crafted ext4 image because balloc.c and ialloc.c do not validate bitmap block numbers.",
+                "id": 1626
+            }
+        ]
+    },
+    "CVE-2023-6610": {
+        "item": [
+            {
+                "cve_id": "CVE-2023-6610",
+                "code_before_change": "static void\nsmb2_dump_detail(void *buf, struct TCP_Server_Info *server)\n{\n#ifdef CONFIG_CIFS_DEBUG2\n\tstruct smb2_hdr *shdr = (struct smb2_hdr *)buf;\n\n\tcifs_server_dbg(VFS, \"Cmd: %d Err: 0x%x Flags: 0x%x Mid: %llu Pid: %d\\n\",\n\t\t shdr->Command, shdr->Status, shdr->Flags, shdr->MessageId,\n\t\t shdr->Id.SyncId.ProcessId);\n\tcifs_server_dbg(VFS, \"smb buf %p len %u\\n\", buf,\n\t\t server->ops->calc_smb_size(buf));\n#endif\n}",
+                "code_after_change": "static void\nsmb2_dump_detail(void *buf, struct TCP_Server_Info *server)\n{\n#ifdef CONFIG_CIFS_DEBUG2\n\tstruct smb2_hdr *shdr = (struct smb2_hdr *)buf;\n\n\tcifs_server_dbg(VFS, \"Cmd: %d Err: 0x%x Flags: 0x%x Mid: %llu Pid: %d\\n\",\n\t\t shdr->Command, shdr->Status, shdr->Flags, shdr->MessageId,\n\t\t shdr->Id.SyncId.ProcessId);\n\tif (!server->ops->check_message(buf, server->total_read, server)) {\n\t\tcifs_server_dbg(VFS, \"smb buf %p len %u\\n\", buf,\n\t\t\t\tserver->ops->calc_smb_size(buf));\n\t}\n#endif\n}",
+                "patch": "--- code before\n+++ code after\n@@ -7,7 +7,9 @@\n \tcifs_server_dbg(VFS, \"Cmd: %d Err: 0x%x Flags: 0x%x Mid: %llu Pid: %d\\n\",\n \t\t shdr->Command, shdr->Status, shdr->Flags, shdr->MessageId,\n \t\t shdr->Id.SyncId.ProcessId);\n-\tcifs_server_dbg(VFS, \"smb buf %p len %u\\n\", buf,\n-\t\t server->ops->calc_smb_size(buf));\n+\tif (!server->ops->check_message(buf, server->total_read, server)) {\n+\t\tcifs_server_dbg(VFS, \"smb buf %p len %u\\n\", buf,\n+\t\t\t\tserver->ops->calc_smb_size(buf));\n+\t}\n #endif\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (!server->ops->check_message(buf, server->total_read, server)) {",
+                        "\t\tcifs_server_dbg(VFS, \"smb buf %p len %u\\n\", buf,",
+                        "\t\t\t\tserver->ops->calc_smb_size(buf));",
+                        "\t}"
+                    ],
+                    "deleted": [
+                        "\tcifs_server_dbg(VFS, \"smb buf %p len %u\\n\", buf,",
+                        "\t\t server->ops->calc_smb_size(buf));"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An out-of-bounds read vulnerability was found in smb2_dump_detail in fs/smb/client/smb2ops.c in the Linux Kernel. This issue could allow a local attacker to crash the system or leak internal kernel information.",
+                "id": 4306
+            }
+        ]
+    },
+    "CVE-2015-5327": {
+        "item": [
+            {
+                "cve_id": "CVE-2015-5327",
+                "code_before_change": "int x509_decode_time(time64_t *_t,  size_t hdrlen,\n\t\t     unsigned char tag,\n\t\t     const unsigned char *value, size_t vlen)\n{\n\tstatic const unsigned char month_lengths[] = { 31, 29, 31, 30, 31, 30,\n\t\t\t\t\t\t       31, 31, 30, 31, 30, 31 };\n\tconst unsigned char *p = value;\n\tunsigned year, mon, day, hour, min, sec, mon_len;\n\n#define dec2bin(X) ({ unsigned char x = (X) - '0'; if (x > 9) goto invalid_time; x; })\n#define DD2bin(P) ({ unsigned x = dec2bin(P[0]) * 10 + dec2bin(P[1]); P += 2; x; })\n\n\tif (tag == ASN1_UNITIM) {\n\t\t/* UTCTime: YYMMDDHHMMSSZ */\n\t\tif (vlen != 13)\n\t\t\tgoto unsupported_time;\n\t\tyear = DD2bin(p);\n\t\tif (year >= 50)\n\t\t\tyear += 1900;\n\t\telse\n\t\t\tyear += 2000;\n\t} else if (tag == ASN1_GENTIM) {\n\t\t/* GenTime: YYYYMMDDHHMMSSZ */\n\t\tif (vlen != 15)\n\t\t\tgoto unsupported_time;\n\t\tyear = DD2bin(p) * 100 + DD2bin(p);\n\t\tif (year >= 1950 && year <= 2049)\n\t\t\tgoto invalid_time;\n\t} else {\n\t\tgoto unsupported_time;\n\t}\n\n\tmon  = DD2bin(p);\n\tday = DD2bin(p);\n\thour = DD2bin(p);\n\tmin  = DD2bin(p);\n\tsec  = DD2bin(p);\n\n\tif (*p != 'Z')\n\t\tgoto unsupported_time;\n\n\tmon_len = month_lengths[mon];\n\tif (mon == 2) {\n\t\tif (year % 4 == 0) {\n\t\t\tmon_len = 29;\n\t\t\tif (year % 100 == 0) {\n\t\t\t\tyear /= 100;\n\t\t\t\tif (year % 4 != 0)\n\t\t\t\t\tmon_len = 28;\n\t\t\t}\n\t\t}\n\t}\n\n\tif (year < 1970 ||\n\t    mon < 1 || mon > 12 ||\n\t    day < 1 || day > mon_len ||\n\t    hour > 23 ||\n\t    min > 59 ||\n\t    sec > 59)\n\t\tgoto invalid_time;\n\n\t*_t = mktime64(year, mon, day, hour, min, sec);\n\treturn 0;\n\nunsupported_time:\n\tpr_debug(\"Got unsupported time [tag %02x]: '%*phN'\\n\",\n\t\t tag, (int)vlen, value);\n\treturn -EBADMSG;\ninvalid_time:\n\tpr_debug(\"Got invalid time [tag %02x]: '%*phN'\\n\",\n\t\t tag, (int)vlen, value);\n\treturn -EBADMSG;\n}",
+                "code_after_change": "int x509_decode_time(time64_t *_t,  size_t hdrlen,\n\t\t     unsigned char tag,\n\t\t     const unsigned char *value, size_t vlen)\n{\n\tstatic const unsigned char month_lengths[] = { 31, 29, 31, 30, 31, 30,\n\t\t\t\t\t\t       31, 31, 30, 31, 30, 31 };\n\tconst unsigned char *p = value;\n\tunsigned year, mon, day, hour, min, sec, mon_len;\n\n#define dec2bin(X) ({ unsigned char x = (X) - '0'; if (x > 9) goto invalid_time; x; })\n#define DD2bin(P) ({ unsigned x = dec2bin(P[0]) * 10 + dec2bin(P[1]); P += 2; x; })\n\n\tif (tag == ASN1_UNITIM) {\n\t\t/* UTCTime: YYMMDDHHMMSSZ */\n\t\tif (vlen != 13)\n\t\t\tgoto unsupported_time;\n\t\tyear = DD2bin(p);\n\t\tif (year >= 50)\n\t\t\tyear += 1900;\n\t\telse\n\t\t\tyear += 2000;\n\t} else if (tag == ASN1_GENTIM) {\n\t\t/* GenTime: YYYYMMDDHHMMSSZ */\n\t\tif (vlen != 15)\n\t\t\tgoto unsupported_time;\n\t\tyear = DD2bin(p) * 100 + DD2bin(p);\n\t\tif (year >= 1950 && year <= 2049)\n\t\t\tgoto invalid_time;\n\t} else {\n\t\tgoto unsupported_time;\n\t}\n\n\tmon  = DD2bin(p);\n\tday = DD2bin(p);\n\thour = DD2bin(p);\n\tmin  = DD2bin(p);\n\tsec  = DD2bin(p);\n\n\tif (*p != 'Z')\n\t\tgoto unsupported_time;\n\n\tif (year < 1970 ||\n\t    mon < 1 || mon > 12)\n\t\tgoto invalid_time;\n\n\tmon_len = month_lengths[mon - 1];\n\tif (mon == 2) {\n\t\tif (year % 4 == 0) {\n\t\t\tmon_len = 29;\n\t\t\tif (year % 100 == 0) {\n\t\t\t\tyear /= 100;\n\t\t\t\tif (year % 4 != 0)\n\t\t\t\t\tmon_len = 28;\n\t\t\t}\n\t\t}\n\t}\n\n\tif (day < 1 || day > mon_len ||\n\t    hour > 23 ||\n\t    min > 59 ||\n\t    sec > 59)\n\t\tgoto invalid_time;\n\n\t*_t = mktime64(year, mon, day, hour, min, sec);\n\treturn 0;\n\nunsupported_time:\n\tpr_debug(\"Got unsupported time [tag %02x]: '%*phN'\\n\",\n\t\t tag, (int)vlen, value);\n\treturn -EBADMSG;\ninvalid_time:\n\tpr_debug(\"Got invalid time [tag %02x]: '%*phN'\\n\",\n\t\t tag, (int)vlen, value);\n\treturn -EBADMSG;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -39,7 +39,11 @@\n \tif (*p != 'Z')\n \t\tgoto unsupported_time;\n \n-\tmon_len = month_lengths[mon];\n+\tif (year < 1970 ||\n+\t    mon < 1 || mon > 12)\n+\t\tgoto invalid_time;\n+\n+\tmon_len = month_lengths[mon - 1];\n \tif (mon == 2) {\n \t\tif (year % 4 == 0) {\n \t\t\tmon_len = 29;\n@@ -51,9 +55,7 @@\n \t\t}\n \t}\n \n-\tif (year < 1970 ||\n-\t    mon < 1 || mon > 12 ||\n-\t    day < 1 || day > mon_len ||\n+\tif (day < 1 || day > mon_len ||\n \t    hour > 23 ||\n \t    min > 59 ||\n \t    sec > 59)",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (year < 1970 ||",
+                        "\t    mon < 1 || mon > 12)",
+                        "\t\tgoto invalid_time;",
+                        "",
+                        "\tmon_len = month_lengths[mon - 1];",
+                        "\tif (day < 1 || day > mon_len ||"
+                    ],
+                    "deleted": [
+                        "\tmon_len = month_lengths[mon];",
+                        "\tif (year < 1970 ||",
+                        "\t    mon < 1 || mon > 12 ||",
+                        "\t    day < 1 || day > mon_len ||"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "Out-of-bounds memory read in the x509_decode_time function in x509_cert_parser.c in Linux kernels 4.3-rc1 and after.",
+                "id": 776
+            }
+        ]
+    },
+    "CVE-2022-48502": {
+        "item": [
+            {
+                "cve_id": "CVE-2022-48502",
+                "code_before_change": "struct inode *ntfs_iget5(struct super_block *sb, const struct MFT_REF *ref,\n\t\t\t const struct cpu_str *name)\n{\n\tstruct inode *inode;\n\n\tinode = iget5_locked(sb, ino_get(ref), ntfs_test_inode, ntfs_set_inode,\n\t\t\t     (void *)ref);\n\tif (unlikely(!inode))\n\t\treturn ERR_PTR(-ENOMEM);\n\n\t/* If this is a freshly allocated inode, need to read it now. */\n\tif (inode->i_state & I_NEW)\n\t\tinode = ntfs_read_mft(inode, name, ref);\n\telse if (ref->seq != ntfs_i(inode)->mi.mrec->seq) {\n\t\t/* Inode overlaps? */\n\t\t_ntfs_bad_inode(inode);\n\t}\n\n\treturn inode;\n}",
+                "code_after_change": "struct inode *ntfs_iget5(struct super_block *sb, const struct MFT_REF *ref,\n\t\t\t const struct cpu_str *name)\n{\n\tstruct inode *inode;\n\n\tinode = iget5_locked(sb, ino_get(ref), ntfs_test_inode, ntfs_set_inode,\n\t\t\t     (void *)ref);\n\tif (unlikely(!inode))\n\t\treturn ERR_PTR(-ENOMEM);\n\n\t/* If this is a freshly allocated inode, need to read it now. */\n\tif (inode->i_state & I_NEW)\n\t\tinode = ntfs_read_mft(inode, name, ref);\n\telse if (ref->seq != ntfs_i(inode)->mi.mrec->seq) {\n\t\t/* Inode overlaps? */\n\t\t_ntfs_bad_inode(inode);\n\t}\n\n\tif (IS_ERR(inode) && name)\n\t\tntfs_set_state(sb->s_fs_info, NTFS_DIRTY_ERROR);\n\n\treturn inode;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -16,5 +16,8 @@\n \t\t_ntfs_bad_inode(inode);\n \t}\n \n+\tif (IS_ERR(inode) && name)\n+\t\tntfs_set_state(sb->s_fs_info, NTFS_DIRTY_ERROR);\n+\n \treturn inode;\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (IS_ERR(inode) && name)",
+                        "\t\tntfs_set_state(sb->s_fs_info, NTFS_DIRTY_ERROR);",
+                        ""
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 6.2. The ntfs3 subsystem does not properly check for correctness during disk reads, leading to an out-of-bounds read in ntfs_set_ea in fs/ntfs3/xattr.c.",
+                "id": 3796
+            },
+            {
+                "cve_id": "CVE-2022-48502",
+                "code_before_change": "static int ntfs_read_ea(struct ntfs_inode *ni, struct EA_FULL **ea,\n\t\t\tsize_t add_bytes, const struct EA_INFO **info)\n{\n\tint err;\n\tstruct ntfs_sb_info *sbi = ni->mi.sbi;\n\tstruct ATTR_LIST_ENTRY *le = NULL;\n\tstruct ATTRIB *attr_info, *attr_ea;\n\tvoid *ea_p;\n\tu32 size;\n\n\tstatic_assert(le32_to_cpu(ATTR_EA_INFO) < le32_to_cpu(ATTR_EA));\n\n\t*ea = NULL;\n\t*info = NULL;\n\n\tattr_info =\n\t\tni_find_attr(ni, NULL, &le, ATTR_EA_INFO, NULL, 0, NULL, NULL);\n\tattr_ea =\n\t\tni_find_attr(ni, attr_info, &le, ATTR_EA, NULL, 0, NULL, NULL);\n\n\tif (!attr_ea || !attr_info)\n\t\treturn 0;\n\n\t*info = resident_data_ex(attr_info, sizeof(struct EA_INFO));\n\tif (!*info)\n\t\treturn -EINVAL;\n\n\t/* Check Ea limit. */\n\tsize = le32_to_cpu((*info)->size);\n\tif (size > sbi->ea_max_size)\n\t\treturn -EFBIG;\n\n\tif (attr_size(attr_ea) > sbi->ea_max_size)\n\t\treturn -EFBIG;\n\n\t/* Allocate memory for packed Ea. */\n\tea_p = kmalloc(size_add(size, add_bytes), GFP_NOFS);\n\tif (!ea_p)\n\t\treturn -ENOMEM;\n\n\tif (!size) {\n\t\t/* EA info persists, but xattr is empty. Looks like EA problem. */\n\t} else if (attr_ea->non_res) {\n\t\tstruct runs_tree run;\n\n\t\trun_init(&run);\n\n\t\terr = attr_load_runs_range(ni, ATTR_EA, NULL, 0, &run, 0, size);\n\t\tif (!err)\n\t\t\terr = ntfs_read_run_nb(sbi, &run, 0, ea_p, size, NULL);\n\t\trun_close(&run);\n\n\t\tif (err)\n\t\t\tgoto out;\n\t} else {\n\t\tvoid *p = resident_data_ex(attr_ea, size);\n\n\t\tif (!p) {\n\t\t\terr = -EINVAL;\n\t\t\tgoto out;\n\t\t}\n\t\tmemcpy(ea_p, p, size);\n\t}\n\n\tmemset(Add2Ptr(ea_p, size), 0, add_bytes);\n\t*ea = ea_p;\n\treturn 0;\n\nout:\n\tkfree(ea_p);\n\t*ea = NULL;\n\treturn err;\n}",
+                "code_after_change": "static int ntfs_read_ea(struct ntfs_inode *ni, struct EA_FULL **ea,\n\t\t\tsize_t add_bytes, const struct EA_INFO **info)\n{\n\tint err = -EINVAL;\n\tstruct ntfs_sb_info *sbi = ni->mi.sbi;\n\tstruct ATTR_LIST_ENTRY *le = NULL;\n\tstruct ATTRIB *attr_info, *attr_ea;\n\tvoid *ea_p;\n\tu32 size, off, ea_size;\n\n\tstatic_assert(le32_to_cpu(ATTR_EA_INFO) < le32_to_cpu(ATTR_EA));\n\n\t*ea = NULL;\n\t*info = NULL;\n\n\tattr_info =\n\t\tni_find_attr(ni, NULL, &le, ATTR_EA_INFO, NULL, 0, NULL, NULL);\n\tattr_ea =\n\t\tni_find_attr(ni, attr_info, &le, ATTR_EA, NULL, 0, NULL, NULL);\n\n\tif (!attr_ea || !attr_info)\n\t\treturn 0;\n\n\t*info = resident_data_ex(attr_info, sizeof(struct EA_INFO));\n\tif (!*info)\n\t\tgoto out;\n\n\t/* Check Ea limit. */\n\tsize = le32_to_cpu((*info)->size);\n\tif (size > sbi->ea_max_size) {\n\t\terr = -EFBIG;\n\t\tgoto out;\n\t}\n\n\tif (attr_size(attr_ea) > sbi->ea_max_size) {\n\t\terr = -EFBIG;\n\t\tgoto out;\n\t}\n\n\tif (!size) {\n\t\t/* EA info persists, but xattr is empty. Looks like EA problem. */\n\t\tgoto out;\n\t}\n\n\t/* Allocate memory for packed Ea. */\n\tea_p = kmalloc(size_add(size, add_bytes), GFP_NOFS);\n\tif (!ea_p)\n\t\treturn -ENOMEM;\n\n\tif (attr_ea->non_res) {\n\t\tstruct runs_tree run;\n\n\t\trun_init(&run);\n\n\t\terr = attr_load_runs_range(ni, ATTR_EA, NULL, 0, &run, 0, size);\n\t\tif (!err)\n\t\t\terr = ntfs_read_run_nb(sbi, &run, 0, ea_p, size, NULL);\n\t\trun_close(&run);\n\n\t\tif (err)\n\t\t\tgoto out1;\n\t} else {\n\t\tvoid *p = resident_data_ex(attr_ea, size);\n\n\t\tif (!p)\n\t\t\tgoto out1;\n\t\tmemcpy(ea_p, p, size);\n\t}\n\n\tmemset(Add2Ptr(ea_p, size), 0, add_bytes);\n\n\t/* Check all attributes for consistency. */\n\tfor (off = 0; off < size; off += ea_size) {\n\t\tconst struct EA_FULL *ef = Add2Ptr(ea_p, off);\n\t\tu32 bytes = size - off;\n\n\t\t/* Check if we can use field ea->size. */\n\t\tif (bytes < sizeof(ef->size))\n\t\t\tgoto out1;\n\n\t\tif (ef->size) {\n\t\t\tea_size = le32_to_cpu(ef->size);\n\t\t\tif (ea_size > bytes)\n\t\t\t\tgoto out1;\n\t\t\tcontinue;\n\t\t}\n\n\t\t/* Check if we can use fields ef->name_len and ef->elength. */\n\t\tif (bytes < offsetof(struct EA_FULL, name))\n\t\t\tgoto out1;\n\n\t\tea_size = ALIGN(struct_size(ef, name,\n\t\t\t\t\t    1 + ef->name_len +\n\t\t\t\t\t\t    le16_to_cpu(ef->elength)),\n\t\t\t\t4);\n\t\tif (ea_size > bytes)\n\t\t\tgoto out1;\n\t}\n\n\t*ea = ea_p;\n\treturn 0;\n\nout1:\n\tkfree(ea_p);\nout:\n\tntfs_set_state(sbi, NTFS_DIRTY_DIRTY);\n\treturn err;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -1,12 +1,12 @@\n static int ntfs_read_ea(struct ntfs_inode *ni, struct EA_FULL **ea,\n \t\t\tsize_t add_bytes, const struct EA_INFO **info)\n {\n-\tint err;\n+\tint err = -EINVAL;\n \tstruct ntfs_sb_info *sbi = ni->mi.sbi;\n \tstruct ATTR_LIST_ENTRY *le = NULL;\n \tstruct ATTRIB *attr_info, *attr_ea;\n \tvoid *ea_p;\n-\tu32 size;\n+\tu32 size, off, ea_size;\n \n \tstatic_assert(le32_to_cpu(ATTR_EA_INFO) < le32_to_cpu(ATTR_EA));\n \n@@ -23,24 +23,31 @@\n \n \t*info = resident_data_ex(attr_info, sizeof(struct EA_INFO));\n \tif (!*info)\n-\t\treturn -EINVAL;\n+\t\tgoto out;\n \n \t/* Check Ea limit. */\n \tsize = le32_to_cpu((*info)->size);\n-\tif (size > sbi->ea_max_size)\n-\t\treturn -EFBIG;\n+\tif (size > sbi->ea_max_size) {\n+\t\terr = -EFBIG;\n+\t\tgoto out;\n+\t}\n \n-\tif (attr_size(attr_ea) > sbi->ea_max_size)\n-\t\treturn -EFBIG;\n+\tif (attr_size(attr_ea) > sbi->ea_max_size) {\n+\t\terr = -EFBIG;\n+\t\tgoto out;\n+\t}\n+\n+\tif (!size) {\n+\t\t/* EA info persists, but xattr is empty. Looks like EA problem. */\n+\t\tgoto out;\n+\t}\n \n \t/* Allocate memory for packed Ea. */\n \tea_p = kmalloc(size_add(size, add_bytes), GFP_NOFS);\n \tif (!ea_p)\n \t\treturn -ENOMEM;\n \n-\tif (!size) {\n-\t\t/* EA info persists, but xattr is empty. Looks like EA problem. */\n-\t} else if (attr_ea->non_res) {\n+\tif (attr_ea->non_res) {\n \t\tstruct runs_tree run;\n \n \t\trun_init(&run);\n@@ -51,23 +58,51 @@\n \t\trun_close(&run);\n \n \t\tif (err)\n-\t\t\tgoto out;\n+\t\t\tgoto out1;\n \t} else {\n \t\tvoid *p = resident_data_ex(attr_ea, size);\n \n-\t\tif (!p) {\n-\t\t\terr = -EINVAL;\n-\t\t\tgoto out;\n-\t\t}\n+\t\tif (!p)\n+\t\t\tgoto out1;\n \t\tmemcpy(ea_p, p, size);\n \t}\n \n \tmemset(Add2Ptr(ea_p, size), 0, add_bytes);\n+\n+\t/* Check all attributes for consistency. */\n+\tfor (off = 0; off < size; off += ea_size) {\n+\t\tconst struct EA_FULL *ef = Add2Ptr(ea_p, off);\n+\t\tu32 bytes = size - off;\n+\n+\t\t/* Check if we can use field ea->size. */\n+\t\tif (bytes < sizeof(ef->size))\n+\t\t\tgoto out1;\n+\n+\t\tif (ef->size) {\n+\t\t\tea_size = le32_to_cpu(ef->size);\n+\t\t\tif (ea_size > bytes)\n+\t\t\t\tgoto out1;\n+\t\t\tcontinue;\n+\t\t}\n+\n+\t\t/* Check if we can use fields ef->name_len and ef->elength. */\n+\t\tif (bytes < offsetof(struct EA_FULL, name))\n+\t\t\tgoto out1;\n+\n+\t\tea_size = ALIGN(struct_size(ef, name,\n+\t\t\t\t\t    1 + ef->name_len +\n+\t\t\t\t\t\t    le16_to_cpu(ef->elength)),\n+\t\t\t\t4);\n+\t\tif (ea_size > bytes)\n+\t\t\tgoto out1;\n+\t}\n+\n \t*ea = ea_p;\n \treturn 0;\n \n+out1:\n+\tkfree(ea_p);\n out:\n-\tkfree(ea_p);\n-\t*ea = NULL;\n+\tntfs_set_state(sbi, NTFS_DIRTY_DIRTY);\n \treturn err;\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\tint err = -EINVAL;",
+                        "\tu32 size, off, ea_size;",
+                        "\t\tgoto out;",
+                        "\tif (size > sbi->ea_max_size) {",
+                        "\t\terr = -EFBIG;",
+                        "\t\tgoto out;",
+                        "\t}",
+                        "\tif (attr_size(attr_ea) > sbi->ea_max_size) {",
+                        "\t\terr = -EFBIG;",
+                        "\t\tgoto out;",
+                        "\t}",
+                        "",
+                        "\tif (!size) {",
+                        "\t\t/* EA info persists, but xattr is empty. Looks like EA problem. */",
+                        "\t\tgoto out;",
+                        "\t}",
+                        "\tif (attr_ea->non_res) {",
+                        "\t\t\tgoto out1;",
+                        "\t\tif (!p)",
+                        "\t\t\tgoto out1;",
+                        "",
+                        "\t/* Check all attributes for consistency. */",
+                        "\tfor (off = 0; off < size; off += ea_size) {",
+                        "\t\tconst struct EA_FULL *ef = Add2Ptr(ea_p, off);",
+                        "\t\tu32 bytes = size - off;",
+                        "",
+                        "\t\t/* Check if we can use field ea->size. */",
+                        "\t\tif (bytes < sizeof(ef->size))",
+                        "\t\t\tgoto out1;",
+                        "",
+                        "\t\tif (ef->size) {",
+                        "\t\t\tea_size = le32_to_cpu(ef->size);",
+                        "\t\t\tif (ea_size > bytes)",
+                        "\t\t\t\tgoto out1;",
+                        "\t\t\tcontinue;",
+                        "\t\t}",
+                        "",
+                        "\t\t/* Check if we can use fields ef->name_len and ef->elength. */",
+                        "\t\tif (bytes < offsetof(struct EA_FULL, name))",
+                        "\t\t\tgoto out1;",
+                        "",
+                        "\t\tea_size = ALIGN(struct_size(ef, name,",
+                        "\t\t\t\t\t    1 + ef->name_len +",
+                        "\t\t\t\t\t\t    le16_to_cpu(ef->elength)),",
+                        "\t\t\t\t4);",
+                        "\t\tif (ea_size > bytes)",
+                        "\t\t\tgoto out1;",
+                        "\t}",
+                        "",
+                        "out1:",
+                        "\tkfree(ea_p);",
+                        "\tntfs_set_state(sbi, NTFS_DIRTY_DIRTY);"
+                    ],
+                    "deleted": [
+                        "\tint err;",
+                        "\tu32 size;",
+                        "\t\treturn -EINVAL;",
+                        "\tif (size > sbi->ea_max_size)",
+                        "\t\treturn -EFBIG;",
+                        "\tif (attr_size(attr_ea) > sbi->ea_max_size)",
+                        "\t\treturn -EFBIG;",
+                        "\tif (!size) {",
+                        "\t\t/* EA info persists, but xattr is empty. Looks like EA problem. */",
+                        "\t} else if (attr_ea->non_res) {",
+                        "\t\t\tgoto out;",
+                        "\t\tif (!p) {",
+                        "\t\t\terr = -EINVAL;",
+                        "\t\t\tgoto out;",
+                        "\t\t}",
+                        "\tkfree(ea_p);",
+                        "\t*ea = NULL;"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 6.2. The ntfs3 subsystem does not properly check for correctness during disk reads, leading to an out-of-bounds read in ntfs_set_ea in fs/ntfs3/xattr.c.",
+                "id": 3799
+            },
+            {
+                "cve_id": "CVE-2022-48502",
+                "code_before_change": "int indx_read(struct ntfs_index *indx, struct ntfs_inode *ni, CLST vbn,\n\t      struct indx_node **node)\n{\n\tint err;\n\tstruct INDEX_BUFFER *ib;\n\tstruct runs_tree *run = &indx->alloc_run;\n\tstruct rw_semaphore *lock = &indx->run_lock;\n\tu64 vbo = (u64)vbn << indx->vbn2vbo_bits;\n\tu32 bytes = 1u << indx->index_bits;\n\tstruct indx_node *in = *node;\n\tconst struct INDEX_NAMES *name;\n\n\tif (!in) {\n\t\tin = kzalloc(sizeof(struct indx_node), GFP_NOFS);\n\t\tif (!in)\n\t\t\treturn -ENOMEM;\n\t} else {\n\t\tnb_put(&in->nb);\n\t}\n\n\tib = in->index;\n\tif (!ib) {\n\t\tib = kmalloc(bytes, GFP_NOFS);\n\t\tif (!ib) {\n\t\t\terr = -ENOMEM;\n\t\t\tgoto out;\n\t\t}\n\t}\n\n\tdown_read(lock);\n\terr = ntfs_read_bh(ni->mi.sbi, run, vbo, &ib->rhdr, bytes, &in->nb);\n\tup_read(lock);\n\tif (!err)\n\t\tgoto ok;\n\n\tif (err == -E_NTFS_FIXUP)\n\t\tgoto ok;\n\n\tif (err != -ENOENT)\n\t\tgoto out;\n\n\tname = &s_index_names[indx->type];\n\tdown_write(lock);\n\terr = attr_load_runs_range(ni, ATTR_ALLOC, name->name, name->name_len,\n\t\t\t\t   run, vbo, vbo + bytes);\n\tup_write(lock);\n\tif (err)\n\t\tgoto out;\n\n\tdown_read(lock);\n\terr = ntfs_read_bh(ni->mi.sbi, run, vbo, &ib->rhdr, bytes, &in->nb);\n\tup_read(lock);\n\tif (err == -E_NTFS_FIXUP)\n\t\tgoto ok;\n\n\tif (err)\n\t\tgoto out;\n\nok:\n\tif (err == -E_NTFS_FIXUP) {\n\t\tntfs_write_bh(ni->mi.sbi, &ib->rhdr, &in->nb, 0);\n\t\terr = 0;\n\t}\n\n\t/* check for index header length */\n\tif (offsetof(struct INDEX_BUFFER, ihdr) + ib->ihdr.used > bytes) {\n\t\terr = -EINVAL;\n\t\tgoto out;\n\t}\n\n\tin->index = ib;\n\t*node = in;\n\nout:\n\tif (ib != in->index)\n\t\tkfree(ib);\n\n\tif (*node != in) {\n\t\tnb_put(&in->nb);\n\t\tkfree(in);\n\t}\n\n\treturn err;\n}",
+                "code_after_change": "int indx_read(struct ntfs_index *indx, struct ntfs_inode *ni, CLST vbn,\n\t      struct indx_node **node)\n{\n\tint err;\n\tstruct INDEX_BUFFER *ib;\n\tstruct runs_tree *run = &indx->alloc_run;\n\tstruct rw_semaphore *lock = &indx->run_lock;\n\tu64 vbo = (u64)vbn << indx->vbn2vbo_bits;\n\tu32 bytes = 1u << indx->index_bits;\n\tstruct indx_node *in = *node;\n\tconst struct INDEX_NAMES *name;\n\n\tif (!in) {\n\t\tin = kzalloc(sizeof(struct indx_node), GFP_NOFS);\n\t\tif (!in)\n\t\t\treturn -ENOMEM;\n\t} else {\n\t\tnb_put(&in->nb);\n\t}\n\n\tib = in->index;\n\tif (!ib) {\n\t\tib = kmalloc(bytes, GFP_NOFS);\n\t\tif (!ib) {\n\t\t\terr = -ENOMEM;\n\t\t\tgoto out;\n\t\t}\n\t}\n\n\tdown_read(lock);\n\terr = ntfs_read_bh(ni->mi.sbi, run, vbo, &ib->rhdr, bytes, &in->nb);\n\tup_read(lock);\n\tif (!err)\n\t\tgoto ok;\n\n\tif (err == -E_NTFS_FIXUP)\n\t\tgoto ok;\n\n\tif (err != -ENOENT)\n\t\tgoto out;\n\n\tname = &s_index_names[indx->type];\n\tdown_write(lock);\n\terr = attr_load_runs_range(ni, ATTR_ALLOC, name->name, name->name_len,\n\t\t\t\t   run, vbo, vbo + bytes);\n\tup_write(lock);\n\tif (err)\n\t\tgoto out;\n\n\tdown_read(lock);\n\terr = ntfs_read_bh(ni->mi.sbi, run, vbo, &ib->rhdr, bytes, &in->nb);\n\tup_read(lock);\n\tif (err == -E_NTFS_FIXUP)\n\t\tgoto ok;\n\n\tif (err)\n\t\tgoto out;\n\nok:\n\tif (!index_buf_check(ib, bytes, &vbn)) {\n\t\tntfs_inode_err(&ni->vfs_inode, \"directory corrupted\");\n\t\tntfs_set_state(ni->mi.sbi, NTFS_DIRTY_ERROR);\n\t\terr = -EINVAL;\n\t\tgoto out;\n\t}\n\n\tif (err == -E_NTFS_FIXUP) {\n\t\tntfs_write_bh(ni->mi.sbi, &ib->rhdr, &in->nb, 0);\n\t\terr = 0;\n\t}\n\n\t/* check for index header length */\n\tif (offsetof(struct INDEX_BUFFER, ihdr) + ib->ihdr.used > bytes) {\n\t\terr = -EINVAL;\n\t\tgoto out;\n\t}\n\n\tin->index = ib;\n\t*node = in;\n\nout:\n\tif (ib != in->index)\n\t\tkfree(ib);\n\n\tif (*node != in) {\n\t\tnb_put(&in->nb);\n\t\tkfree(in);\n\t}\n\n\treturn err;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -57,6 +57,13 @@\n \t\tgoto out;\n \n ok:\n+\tif (!index_buf_check(ib, bytes, &vbn)) {\n+\t\tntfs_inode_err(&ni->vfs_inode, \"directory corrupted\");\n+\t\tntfs_set_state(ni->mi.sbi, NTFS_DIRTY_ERROR);\n+\t\terr = -EINVAL;\n+\t\tgoto out;\n+\t}\n+\n \tif (err == -E_NTFS_FIXUP) {\n \t\tntfs_write_bh(ni->mi.sbi, &ib->rhdr, &in->nb, 0);\n \t\terr = 0;",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (!index_buf_check(ib, bytes, &vbn)) {",
+                        "\t\tntfs_inode_err(&ni->vfs_inode, \"directory corrupted\");",
+                        "\t\tntfs_set_state(ni->mi.sbi, NTFS_DIRTY_ERROR);",
+                        "\t\terr = -EINVAL;",
+                        "\t\tgoto out;",
+                        "\t}",
+                        ""
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 6.2. The ntfs3 subsystem does not properly check for correctness during disk reads, leading to an out-of-bounds read in ntfs_set_ea in fs/ntfs3/xattr.c.",
+                "id": 3793
+            },
+            {
+                "cve_id": "CVE-2022-48502",
+                "code_before_change": "static ssize_t ntfs_list_ea(struct ntfs_inode *ni, char *buffer,\n\t\t\t    size_t bytes_per_buffer)\n{\n\tconst struct EA_INFO *info;\n\tstruct EA_FULL *ea_all = NULL;\n\tconst struct EA_FULL *ea;\n\tu32 off, size;\n\tint err;\n\tsize_t ret;\n\n\terr = ntfs_read_ea(ni, &ea_all, 0, &info);\n\tif (err)\n\t\treturn err;\n\n\tif (!info || !ea_all)\n\t\treturn 0;\n\n\tsize = le32_to_cpu(info->size);\n\n\t/* Enumerate all xattrs. */\n\tfor (ret = 0, off = 0; off < size; off += unpacked_ea_size(ea)) {\n\t\tea = Add2Ptr(ea_all, off);\n\n\t\tif (buffer) {\n\t\t\tif (ret + ea->name_len + 1 > bytes_per_buffer) {\n\t\t\t\terr = -ERANGE;\n\t\t\t\tgoto out;\n\t\t\t}\n\n\t\t\tmemcpy(buffer + ret, ea->name, ea->name_len);\n\t\t\tbuffer[ret + ea->name_len] = 0;\n\t\t}\n\n\t\tret += ea->name_len + 1;\n\t}\n\nout:\n\tkfree(ea_all);\n\treturn err ? err : ret;\n}",
+                "code_after_change": "static ssize_t ntfs_list_ea(struct ntfs_inode *ni, char *buffer,\n\t\t\t    size_t bytes_per_buffer)\n{\n\tconst struct EA_INFO *info;\n\tstruct EA_FULL *ea_all = NULL;\n\tconst struct EA_FULL *ea;\n\tu32 off, size;\n\tint err;\n\tint ea_size;\n\tsize_t ret;\n\n\terr = ntfs_read_ea(ni, &ea_all, 0, &info);\n\tif (err)\n\t\treturn err;\n\n\tif (!info || !ea_all)\n\t\treturn 0;\n\n\tsize = le32_to_cpu(info->size);\n\n\t/* Enumerate all xattrs. */\n\tfor (ret = 0, off = 0; off < size; off += ea_size) {\n\t\tea = Add2Ptr(ea_all, off);\n\t\tea_size = unpacked_ea_size(ea);\n\n\t\tif (buffer) {\n\t\t\tif (ret + ea->name_len + 1 > bytes_per_buffer) {\n\t\t\t\terr = -ERANGE;\n\t\t\t\tgoto out;\n\t\t\t}\n\n\t\t\tmemcpy(buffer + ret, ea->name, ea->name_len);\n\t\t\tbuffer[ret + ea->name_len] = 0;\n\t\t}\n\n\t\tret += ea->name_len + 1;\n\t}\n\nout:\n\tkfree(ea_all);\n\treturn err ? err : ret;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -6,6 +6,7 @@\n \tconst struct EA_FULL *ea;\n \tu32 off, size;\n \tint err;\n+\tint ea_size;\n \tsize_t ret;\n \n \terr = ntfs_read_ea(ni, &ea_all, 0, &info);\n@@ -18,8 +19,9 @@\n \tsize = le32_to_cpu(info->size);\n \n \t/* Enumerate all xattrs. */\n-\tfor (ret = 0, off = 0; off < size; off += unpacked_ea_size(ea)) {\n+\tfor (ret = 0, off = 0; off < size; off += ea_size) {\n \t\tea = Add2Ptr(ea_all, off);\n+\t\tea_size = unpacked_ea_size(ea);\n \n \t\tif (buffer) {\n \t\t\tif (ret + ea->name_len + 1 > bytes_per_buffer) {",
+                "function_modified_lines": {
+                    "added": [
+                        "\tint ea_size;",
+                        "\tfor (ret = 0, off = 0; off < size; off += ea_size) {",
+                        "\t\tea_size = unpacked_ea_size(ea);"
+                    ],
+                    "deleted": [
+                        "\tfor (ret = 0, off = 0; off < size; off += unpacked_ea_size(ea)) {"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 6.2. The ntfs3 subsystem does not properly check for correctness during disk reads, leading to an out-of-bounds read in ntfs_set_ea in fs/ntfs3/xattr.c.",
+                "id": 3801
+            }
+        ]
+    },
+    "CVE-2023-39194": {
+        "item": [
+            {
+                "cve_id": "CVE-2023-39194",
+                "code_before_change": "static int xfrm_dump_sa(struct sk_buff *skb, struct netlink_callback *cb)\n{\n\tstruct net *net = sock_net(skb->sk);\n\tstruct xfrm_state_walk *walk = (struct xfrm_state_walk *) &cb->args[1];\n\tstruct xfrm_dump_info info;\n\n\tBUILD_BUG_ON(sizeof(struct xfrm_state_walk) >\n\t\t     sizeof(cb->args) - sizeof(cb->args[0]));\n\n\tinfo.in_skb = cb->skb;\n\tinfo.out_skb = skb;\n\tinfo.nlmsg_seq = cb->nlh->nlmsg_seq;\n\tinfo.nlmsg_flags = NLM_F_MULTI;\n\n\tif (!cb->args[0]) {\n\t\tstruct nlattr *attrs[XFRMA_MAX+1];\n\t\tstruct xfrm_address_filter *filter = NULL;\n\t\tu8 proto = 0;\n\t\tint err;\n\n\t\terr = nlmsg_parse_deprecated(cb->nlh, 0, attrs, XFRMA_MAX,\n\t\t\t\t\t     xfrma_policy, cb->extack);\n\t\tif (err < 0)\n\t\t\treturn err;\n\n\t\tif (attrs[XFRMA_ADDRESS_FILTER]) {\n\t\t\tfilter = kmemdup(nla_data(attrs[XFRMA_ADDRESS_FILTER]),\n\t\t\t\t\t sizeof(*filter), GFP_KERNEL);\n\t\t\tif (filter == NULL)\n\t\t\t\treturn -ENOMEM;\n\t\t}\n\n\t\tif (attrs[XFRMA_PROTO])\n\t\t\tproto = nla_get_u8(attrs[XFRMA_PROTO]);\n\n\t\txfrm_state_walk_init(walk, proto, filter);\n\t\tcb->args[0] = 1;\n\t}\n\n\t(void) xfrm_state_walk(net, walk, dump_one_state, &info);\n\n\treturn skb->len;\n}",
+                "code_after_change": "static int xfrm_dump_sa(struct sk_buff *skb, struct netlink_callback *cb)\n{\n\tstruct net *net = sock_net(skb->sk);\n\tstruct xfrm_state_walk *walk = (struct xfrm_state_walk *) &cb->args[1];\n\tstruct xfrm_dump_info info;\n\n\tBUILD_BUG_ON(sizeof(struct xfrm_state_walk) >\n\t\t     sizeof(cb->args) - sizeof(cb->args[0]));\n\n\tinfo.in_skb = cb->skb;\n\tinfo.out_skb = skb;\n\tinfo.nlmsg_seq = cb->nlh->nlmsg_seq;\n\tinfo.nlmsg_flags = NLM_F_MULTI;\n\n\tif (!cb->args[0]) {\n\t\tstruct nlattr *attrs[XFRMA_MAX+1];\n\t\tstruct xfrm_address_filter *filter = NULL;\n\t\tu8 proto = 0;\n\t\tint err;\n\n\t\terr = nlmsg_parse_deprecated(cb->nlh, 0, attrs, XFRMA_MAX,\n\t\t\t\t\t     xfrma_policy, cb->extack);\n\t\tif (err < 0)\n\t\t\treturn err;\n\n\t\tif (attrs[XFRMA_ADDRESS_FILTER]) {\n\t\t\tfilter = kmemdup(nla_data(attrs[XFRMA_ADDRESS_FILTER]),\n\t\t\t\t\t sizeof(*filter), GFP_KERNEL);\n\t\t\tif (filter == NULL)\n\t\t\t\treturn -ENOMEM;\n\n\t\t\t/* see addr_match(), (prefix length >> 5) << 2\n\t\t\t * will be used to compare xfrm_address_t\n\t\t\t */\n\t\t\tif (filter->splen > (sizeof(xfrm_address_t) << 3) ||\n\t\t\t    filter->dplen > (sizeof(xfrm_address_t) << 3)) {\n\t\t\t\tkfree(filter);\n\t\t\t\treturn -EINVAL;\n\t\t\t}\n\t\t}\n\n\t\tif (attrs[XFRMA_PROTO])\n\t\t\tproto = nla_get_u8(attrs[XFRMA_PROTO]);\n\n\t\txfrm_state_walk_init(walk, proto, filter);\n\t\tcb->args[0] = 1;\n\t}\n\n\t(void) xfrm_state_walk(net, walk, dump_one_state, &info);\n\n\treturn skb->len;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -28,6 +28,15 @@\n \t\t\t\t\t sizeof(*filter), GFP_KERNEL);\n \t\t\tif (filter == NULL)\n \t\t\t\treturn -ENOMEM;\n+\n+\t\t\t/* see addr_match(), (prefix length >> 5) << 2\n+\t\t\t * will be used to compare xfrm_address_t\n+\t\t\t */\n+\t\t\tif (filter->splen > (sizeof(xfrm_address_t) << 3) ||\n+\t\t\t    filter->dplen > (sizeof(xfrm_address_t) << 3)) {\n+\t\t\t\tkfree(filter);\n+\t\t\t\treturn -EINVAL;\n+\t\t\t}\n \t\t}\n \n \t\tif (attrs[XFRMA_PROTO])",
+                "function_modified_lines": {
+                    "added": [
+                        "",
+                        "\t\t\t/* see addr_match(), (prefix length >> 5) << 2",
+                        "\t\t\t * will be used to compare xfrm_address_t",
+                        "\t\t\t */",
+                        "\t\t\tif (filter->splen > (sizeof(xfrm_address_t) << 3) ||",
+                        "\t\t\t    filter->dplen > (sizeof(xfrm_address_t) << 3)) {",
+                        "\t\t\t\tkfree(filter);",
+                        "\t\t\t\treturn -EINVAL;",
+                        "\t\t\t}"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "A flaw was found in the XFRM subsystem in the Linux kernel. The specific flaw exists within the processing of state filters, which can result in a read past the end of an allocated buffer. This flaw allows a local privileged (CAP_NET_ADMIN) attacker to trigger an out-of-bounds read, potentially leading to an information disclosure.",
+                "id": 4182
+            }
+        ]
+    },
+    "CVE-2017-8240": {
+        "item": [
+            {
+                "cve_id": "CVE-2017-8240",
+                "code_before_change": "static void msm_pinctrl_setup_pm_reset(struct msm_pinctrl *pctrl)\n{\n\tint i = 0;\n\tconst struct msm_function *func = pctrl->soc->functions;\n\n\tfor (; i <= pctrl->soc->nfunctions; i++)\n\t\tif (!strcmp(func[i].name, \"ps_hold\")) {\n\t\t\tpctrl->restart_nb.notifier_call = msm_ps_hold_restart;\n\t\t\tpctrl->restart_nb.priority = 128;\n\t\t\tif (register_restart_handler(&pctrl->restart_nb))\n\t\t\t\tdev_err(pctrl->dev,\n\t\t\t\t\t\"failed to setup restart handler.\\n\");\n\t\t\tbreak;\n\t\t}\n}",
+                "code_after_change": "static void msm_pinctrl_setup_pm_reset(struct msm_pinctrl *pctrl)\n{\n\tint i;\n\tconst struct msm_function *func = pctrl->soc->functions;\n\n\tfor (i = 0; i < pctrl->soc->nfunctions; i++)\n\t\tif (!strcmp(func[i].name, \"ps_hold\")) {\n\t\t\tpctrl->restart_nb.notifier_call = msm_ps_hold_restart;\n\t\t\tpctrl->restart_nb.priority = 128;\n\t\t\tif (register_restart_handler(&pctrl->restart_nb))\n\t\t\t\tdev_err(pctrl->dev,\n\t\t\t\t\t\"failed to setup restart handler.\\n\");\n\t\t\tbreak;\n\t\t}\n}",
+                "patch": "--- code before\n+++ code after\n@@ -1,9 +1,9 @@\n static void msm_pinctrl_setup_pm_reset(struct msm_pinctrl *pctrl)\n {\n-\tint i = 0;\n+\tint i;\n \tconst struct msm_function *func = pctrl->soc->functions;\n \n-\tfor (; i <= pctrl->soc->nfunctions; i++)\n+\tfor (i = 0; i < pctrl->soc->nfunctions; i++)\n \t\tif (!strcmp(func[i].name, \"ps_hold\")) {\n \t\t\tpctrl->restart_nb.notifier_call = msm_ps_hold_restart;\n \t\t\tpctrl->restart_nb.priority = 128;",
+                "function_modified_lines": {
+                    "added": [
+                        "\tint i;",
+                        "\tfor (i = 0; i < pctrl->soc->nfunctions; i++)"
+                    ],
+                    "deleted": [
+                        "\tint i = 0;",
+                        "\tfor (; i <= pctrl->soc->nfunctions; i++)"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "In all Android releases from CAF using the Linux kernel, a kernel driver has an off-by-one buffer over-read vulnerability.",
+                "id": 1552
+            }
+        ]
+    },
+    "CVE-2020-35519": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-35519",
+                "code_before_change": "static int x25_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)\n{\n\tstruct sock *sk = sock->sk;\n\tstruct sockaddr_x25 *addr = (struct sockaddr_x25 *)uaddr;\n\tint len, i, rc = 0;\n\n\tif (addr_len != sizeof(struct sockaddr_x25) ||\n\t    addr->sx25_family != AF_X25) {\n\t\trc = -EINVAL;\n\t\tgoto out;\n\t}\n\n\t/* check for the null_x25_address */\n\tif (strcmp(addr->sx25_addr.x25_addr, null_x25_address.x25_addr)) {\n\n\t\tlen = strlen(addr->sx25_addr.x25_addr);\n\t\tfor (i = 0; i < len; i++) {\n\t\t\tif (!isdigit(addr->sx25_addr.x25_addr[i])) {\n\t\t\t\trc = -EINVAL;\n\t\t\t\tgoto out;\n\t\t\t}\n\t\t}\n\t}\n\n\tlock_sock(sk);\n\tif (sock_flag(sk, SOCK_ZAPPED)) {\n\t\tx25_sk(sk)->source_addr = addr->sx25_addr;\n\t\tx25_insert_socket(sk);\n\t\tsock_reset_flag(sk, SOCK_ZAPPED);\n\t} else {\n\t\trc = -EINVAL;\n\t}\n\trelease_sock(sk);\n\tSOCK_DEBUG(sk, \"x25_bind: socket is bound\\n\");\nout:\n\treturn rc;\n}",
+                "code_after_change": "static int x25_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)\n{\n\tstruct sock *sk = sock->sk;\n\tstruct sockaddr_x25 *addr = (struct sockaddr_x25 *)uaddr;\n\tint len, i, rc = 0;\n\n\tif (addr_len != sizeof(struct sockaddr_x25) ||\n\t    addr->sx25_family != AF_X25 ||\n\t    strnlen(addr->sx25_addr.x25_addr, X25_ADDR_LEN) == X25_ADDR_LEN) {\n\t\trc = -EINVAL;\n\t\tgoto out;\n\t}\n\n\t/* check for the null_x25_address */\n\tif (strcmp(addr->sx25_addr.x25_addr, null_x25_address.x25_addr)) {\n\n\t\tlen = strlen(addr->sx25_addr.x25_addr);\n\t\tfor (i = 0; i < len; i++) {\n\t\t\tif (!isdigit(addr->sx25_addr.x25_addr[i])) {\n\t\t\t\trc = -EINVAL;\n\t\t\t\tgoto out;\n\t\t\t}\n\t\t}\n\t}\n\n\tlock_sock(sk);\n\tif (sock_flag(sk, SOCK_ZAPPED)) {\n\t\tx25_sk(sk)->source_addr = addr->sx25_addr;\n\t\tx25_insert_socket(sk);\n\t\tsock_reset_flag(sk, SOCK_ZAPPED);\n\t} else {\n\t\trc = -EINVAL;\n\t}\n\trelease_sock(sk);\n\tSOCK_DEBUG(sk, \"x25_bind: socket is bound\\n\");\nout:\n\treturn rc;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -5,7 +5,8 @@\n \tint len, i, rc = 0;\n \n \tif (addr_len != sizeof(struct sockaddr_x25) ||\n-\t    addr->sx25_family != AF_X25) {\n+\t    addr->sx25_family != AF_X25 ||\n+\t    strnlen(addr->sx25_addr.x25_addr, X25_ADDR_LEN) == X25_ADDR_LEN) {\n \t\trc = -EINVAL;\n \t\tgoto out;\n \t}",
+                "function_modified_lines": {
+                    "added": [
+                        "\t    addr->sx25_family != AF_X25 ||",
+                        "\t    strnlen(addr->sx25_addr.x25_addr, X25_ADDR_LEN) == X25_ADDR_LEN) {"
+                    ],
+                    "deleted": [
+                        "\t    addr->sx25_family != AF_X25) {"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An out-of-bounds (OOB) memory access flaw was found in x25_bind in net/x25/af_x25.c in the Linux kernel version v5.12-rc5. A bounds check failure allows a local attacker with a user account on the system to gain access to out-of-bounds memory, leading to a system crash or a leak of internal kernel information. The highest threat from this vulnerability is to confidentiality, integrity, as well as system availability.",
+                "id": 2711
+            }
+        ]
+    },
+    "CVE-2019-3459": {
+        "item": [
+            {
+                "cve_id": "CVE-2019-3459",
+                "code_before_change": "static int l2cap_parse_conf_rsp(struct l2cap_chan *chan, void *rsp, int len,\n\t\t\t\tvoid *data, size_t size, u16 *result)\n{\n\tstruct l2cap_conf_req *req = data;\n\tvoid *ptr = req->data;\n\tvoid *endptr = data + size;\n\tint type, olen;\n\tunsigned long val;\n\tstruct l2cap_conf_rfc rfc = { .mode = L2CAP_MODE_BASIC };\n\tstruct l2cap_conf_efs efs;\n\n\tBT_DBG(\"chan %p, rsp %p, len %d, req %p\", chan, rsp, len, data);\n\n\twhile (len >= L2CAP_CONF_OPT_SIZE) {\n\t\tlen -= l2cap_get_conf_opt(&rsp, &type, &olen, &val);\n\n\t\tswitch (type) {\n\t\tcase L2CAP_CONF_MTU:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tif (val < L2CAP_DEFAULT_MIN_MTU) {\n\t\t\t\t*result = L2CAP_CONF_UNACCEPT;\n\t\t\t\tchan->imtu = L2CAP_DEFAULT_MIN_MTU;\n\t\t\t} else\n\t\t\t\tchan->imtu = val;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_MTU, 2, chan->imtu,\n\t\t\t\t\t   endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FLUSH_TO:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tchan->flush_to = val;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_FLUSH_TO, 2,\n\t\t\t\t\t   chan->flush_to, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_RFC:\n\t\t\tif (olen != sizeof(rfc))\n\t\t\t\tbreak;\n\t\t\tmemcpy(&rfc, (void *)val, olen);\n\t\t\tif (test_bit(CONF_STATE2_DEVICE, &chan->conf_state) &&\n\t\t\t    rfc.mode != chan->mode)\n\t\t\t\treturn -ECONNREFUSED;\n\t\t\tchan->fcs = 0;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC, sizeof(rfc),\n\t\t\t\t\t   (unsigned long) &rfc, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EWS:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tchan->ack_win = min_t(u16, val, chan->ack_win);\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EWS, 2,\n\t\t\t\t\t   chan->tx_win, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EFS:\n\t\t\tif (olen != sizeof(efs))\n\t\t\t\tbreak;\n\t\t\tmemcpy(&efs, (void *)val, olen);\n\t\t\tif (chan->local_stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != chan->local_stype)\n\t\t\t\treturn -ECONNREFUSED;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EFS, sizeof(efs),\n\t\t\t\t\t   (unsigned long) &efs, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FCS:\n\t\t\tif (olen != 1)\n\t\t\t\tbreak;\n\t\t\tif (*result == L2CAP_CONF_PENDING)\n\t\t\t\tif (val == L2CAP_FCS_NONE)\n\t\t\t\t\tset_bit(CONF_RECV_NO_FCS,\n\t\t\t\t\t\t&chan->conf_state);\n\t\t\tbreak;\n\t\t}\n\t}\n\n\tif (chan->mode == L2CAP_MODE_BASIC && chan->mode != rfc.mode)\n\t\treturn -ECONNREFUSED;\n\n\tchan->mode = rfc.mode;\n\n\tif (*result == L2CAP_CONF_SUCCESS || *result == L2CAP_CONF_PENDING) {\n\t\tswitch (rfc.mode) {\n\t\tcase L2CAP_MODE_ERTM:\n\t\t\tchan->retrans_timeout = le16_to_cpu(rfc.retrans_timeout);\n\t\t\tchan->monitor_timeout = le16_to_cpu(rfc.monitor_timeout);\n\t\t\tchan->mps    = le16_to_cpu(rfc.max_pdu_size);\n\t\t\tif (!test_bit(FLAG_EXT_CTRL, &chan->flags))\n\t\t\t\tchan->ack_win = min_t(u16, chan->ack_win,\n\t\t\t\t\t\t      rfc.txwin_size);\n\n\t\t\tif (test_bit(FLAG_EFS_ENABLE, &chan->flags)) {\n\t\t\t\tchan->local_msdu = le16_to_cpu(efs.msdu);\n\t\t\t\tchan->local_sdu_itime =\n\t\t\t\t\tle32_to_cpu(efs.sdu_itime);\n\t\t\t\tchan->local_acc_lat = le32_to_cpu(efs.acc_lat);\n\t\t\t\tchan->local_flush_to =\n\t\t\t\t\tle32_to_cpu(efs.flush_to);\n\t\t\t}\n\t\t\tbreak;\n\n\t\tcase L2CAP_MODE_STREAMING:\n\t\t\tchan->mps    = le16_to_cpu(rfc.max_pdu_size);\n\t\t}\n\t}\n\n\treq->dcid   = cpu_to_le16(chan->dcid);\n\treq->flags  = cpu_to_le16(0);\n\n\treturn ptr - data;\n}",
+                "code_after_change": "static int l2cap_parse_conf_rsp(struct l2cap_chan *chan, void *rsp, int len,\n\t\t\t\tvoid *data, size_t size, u16 *result)\n{\n\tstruct l2cap_conf_req *req = data;\n\tvoid *ptr = req->data;\n\tvoid *endptr = data + size;\n\tint type, olen;\n\tunsigned long val;\n\tstruct l2cap_conf_rfc rfc = { .mode = L2CAP_MODE_BASIC };\n\tstruct l2cap_conf_efs efs;\n\n\tBT_DBG(\"chan %p, rsp %p, len %d, req %p\", chan, rsp, len, data);\n\n\twhile (len >= L2CAP_CONF_OPT_SIZE) {\n\t\tlen -= l2cap_get_conf_opt(&rsp, &type, &olen, &val);\n\t\tif (len < 0)\n\t\t\tbreak;\n\n\t\tswitch (type) {\n\t\tcase L2CAP_CONF_MTU:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tif (val < L2CAP_DEFAULT_MIN_MTU) {\n\t\t\t\t*result = L2CAP_CONF_UNACCEPT;\n\t\t\t\tchan->imtu = L2CAP_DEFAULT_MIN_MTU;\n\t\t\t} else\n\t\t\t\tchan->imtu = val;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_MTU, 2, chan->imtu,\n\t\t\t\t\t   endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FLUSH_TO:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tchan->flush_to = val;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_FLUSH_TO, 2,\n\t\t\t\t\t   chan->flush_to, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_RFC:\n\t\t\tif (olen != sizeof(rfc))\n\t\t\t\tbreak;\n\t\t\tmemcpy(&rfc, (void *)val, olen);\n\t\t\tif (test_bit(CONF_STATE2_DEVICE, &chan->conf_state) &&\n\t\t\t    rfc.mode != chan->mode)\n\t\t\t\treturn -ECONNREFUSED;\n\t\t\tchan->fcs = 0;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC, sizeof(rfc),\n\t\t\t\t\t   (unsigned long) &rfc, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EWS:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tchan->ack_win = min_t(u16, val, chan->ack_win);\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EWS, 2,\n\t\t\t\t\t   chan->tx_win, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EFS:\n\t\t\tif (olen != sizeof(efs))\n\t\t\t\tbreak;\n\t\t\tmemcpy(&efs, (void *)val, olen);\n\t\t\tif (chan->local_stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != chan->local_stype)\n\t\t\t\treturn -ECONNREFUSED;\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EFS, sizeof(efs),\n\t\t\t\t\t   (unsigned long) &efs, endptr - ptr);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FCS:\n\t\t\tif (olen != 1)\n\t\t\t\tbreak;\n\t\t\tif (*result == L2CAP_CONF_PENDING)\n\t\t\t\tif (val == L2CAP_FCS_NONE)\n\t\t\t\t\tset_bit(CONF_RECV_NO_FCS,\n\t\t\t\t\t\t&chan->conf_state);\n\t\t\tbreak;\n\t\t}\n\t}\n\n\tif (chan->mode == L2CAP_MODE_BASIC && chan->mode != rfc.mode)\n\t\treturn -ECONNREFUSED;\n\n\tchan->mode = rfc.mode;\n\n\tif (*result == L2CAP_CONF_SUCCESS || *result == L2CAP_CONF_PENDING) {\n\t\tswitch (rfc.mode) {\n\t\tcase L2CAP_MODE_ERTM:\n\t\t\tchan->retrans_timeout = le16_to_cpu(rfc.retrans_timeout);\n\t\t\tchan->monitor_timeout = le16_to_cpu(rfc.monitor_timeout);\n\t\t\tchan->mps    = le16_to_cpu(rfc.max_pdu_size);\n\t\t\tif (!test_bit(FLAG_EXT_CTRL, &chan->flags))\n\t\t\t\tchan->ack_win = min_t(u16, chan->ack_win,\n\t\t\t\t\t\t      rfc.txwin_size);\n\n\t\t\tif (test_bit(FLAG_EFS_ENABLE, &chan->flags)) {\n\t\t\t\tchan->local_msdu = le16_to_cpu(efs.msdu);\n\t\t\t\tchan->local_sdu_itime =\n\t\t\t\t\tle32_to_cpu(efs.sdu_itime);\n\t\t\t\tchan->local_acc_lat = le32_to_cpu(efs.acc_lat);\n\t\t\t\tchan->local_flush_to =\n\t\t\t\t\tle32_to_cpu(efs.flush_to);\n\t\t\t}\n\t\t\tbreak;\n\n\t\tcase L2CAP_MODE_STREAMING:\n\t\t\tchan->mps    = le16_to_cpu(rfc.max_pdu_size);\n\t\t}\n\t}\n\n\treq->dcid   = cpu_to_le16(chan->dcid);\n\treq->flags  = cpu_to_le16(0);\n\n\treturn ptr - data;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -13,6 +13,8 @@\n \n \twhile (len >= L2CAP_CONF_OPT_SIZE) {\n \t\tlen -= l2cap_get_conf_opt(&rsp, &type, &olen, &val);\n+\t\tif (len < 0)\n+\t\t\tbreak;\n \n \t\tswitch (type) {\n \t\tcase L2CAP_CONF_MTU:",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\tif (len < 0)",
+                        "\t\t\tbreak;"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "A heap address information leak while using L2CAP_GET_CONF_OPT was discovered in the Linux kernel before 5.1-rc1.",
+                "id": 2309
+            },
+            {
+                "cve_id": "CVE-2019-3459",
+                "code_before_change": "static int l2cap_parse_conf_req(struct l2cap_chan *chan, void *data, size_t data_size)\n{\n\tstruct l2cap_conf_rsp *rsp = data;\n\tvoid *ptr = rsp->data;\n\tvoid *endptr = data + data_size;\n\tvoid *req = chan->conf_req;\n\tint len = chan->conf_len;\n\tint type, hint, olen;\n\tunsigned long val;\n\tstruct l2cap_conf_rfc rfc = { .mode = L2CAP_MODE_BASIC };\n\tstruct l2cap_conf_efs efs;\n\tu8 remote_efs = 0;\n\tu16 mtu = L2CAP_DEFAULT_MTU;\n\tu16 result = L2CAP_CONF_SUCCESS;\n\tu16 size;\n\n\tBT_DBG(\"chan %p\", chan);\n\n\twhile (len >= L2CAP_CONF_OPT_SIZE) {\n\t\tlen -= l2cap_get_conf_opt(&req, &type, &olen, &val);\n\n\t\thint  = type & L2CAP_CONF_HINT;\n\t\ttype &= L2CAP_CONF_MASK;\n\n\t\tswitch (type) {\n\t\tcase L2CAP_CONF_MTU:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tmtu = val;\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FLUSH_TO:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tchan->flush_to = val;\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_QOS:\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_RFC:\n\t\t\tif (olen != sizeof(rfc))\n\t\t\t\tbreak;\n\t\t\tmemcpy(&rfc, (void *) val, olen);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FCS:\n\t\t\tif (olen != 1)\n\t\t\t\tbreak;\n\t\t\tif (val == L2CAP_FCS_NONE)\n\t\t\t\tset_bit(CONF_RECV_NO_FCS, &chan->conf_state);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EFS:\n\t\t\tif (olen != sizeof(efs))\n\t\t\t\tbreak;\n\t\t\tremote_efs = 1;\n\t\t\tmemcpy(&efs, (void *) val, olen);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EWS:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tif (!(chan->conn->local_fixed_chan & L2CAP_FC_A2MP))\n\t\t\t\treturn -ECONNREFUSED;\n\t\t\tset_bit(FLAG_EXT_CTRL, &chan->flags);\n\t\t\tset_bit(CONF_EWS_RECV, &chan->conf_state);\n\t\t\tchan->tx_win_max = L2CAP_DEFAULT_EXT_WINDOW;\n\t\t\tchan->remote_tx_win = val;\n\t\t\tbreak;\n\n\t\tdefault:\n\t\t\tif (hint)\n\t\t\t\tbreak;\n\t\t\tresult = L2CAP_CONF_UNKNOWN;\n\t\t\t*((u8 *) ptr++) = type;\n\t\t\tbreak;\n\t\t}\n\t}\n\n\tif (chan->num_conf_rsp || chan->num_conf_req > 1)\n\t\tgoto done;\n\n\tswitch (chan->mode) {\n\tcase L2CAP_MODE_STREAMING:\n\tcase L2CAP_MODE_ERTM:\n\t\tif (!test_bit(CONF_STATE2_DEVICE, &chan->conf_state)) {\n\t\t\tchan->mode = l2cap_select_mode(rfc.mode,\n\t\t\t\t\t\t       chan->conn->feat_mask);\n\t\t\tbreak;\n\t\t}\n\n\t\tif (remote_efs) {\n\t\t\tif (__l2cap_efs_supported(chan->conn))\n\t\t\t\tset_bit(FLAG_EFS_ENABLE, &chan->flags);\n\t\t\telse\n\t\t\t\treturn -ECONNREFUSED;\n\t\t}\n\n\t\tif (chan->mode != rfc.mode)\n\t\t\treturn -ECONNREFUSED;\n\n\t\tbreak;\n\t}\n\ndone:\n\tif (chan->mode != rfc.mode) {\n\t\tresult = L2CAP_CONF_UNACCEPT;\n\t\trfc.mode = chan->mode;\n\n\t\tif (chan->num_conf_rsp == 1)\n\t\t\treturn -ECONNREFUSED;\n\n\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC, sizeof(rfc),\n\t\t\t\t   (unsigned long) &rfc, endptr - ptr);\n\t}\n\n\tif (result == L2CAP_CONF_SUCCESS) {\n\t\t/* Configure output options and let the other side know\n\t\t * which ones we don't like. */\n\n\t\tif (mtu < L2CAP_DEFAULT_MIN_MTU)\n\t\t\tresult = L2CAP_CONF_UNACCEPT;\n\t\telse {\n\t\t\tchan->omtu = mtu;\n\t\t\tset_bit(CONF_MTU_DONE, &chan->conf_state);\n\t\t}\n\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_MTU, 2, chan->omtu, endptr - ptr);\n\n\t\tif (remote_efs) {\n\t\t\tif (chan->local_stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != chan->local_stype) {\n\n\t\t\t\tresult = L2CAP_CONF_UNACCEPT;\n\n\t\t\t\tif (chan->num_conf_req >= 1)\n\t\t\t\t\treturn -ECONNREFUSED;\n\n\t\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EFS,\n\t\t\t\t\t\t   sizeof(efs),\n\t\t\t\t\t\t   (unsigned long) &efs, endptr - ptr);\n\t\t\t} else {\n\t\t\t\t/* Send PENDING Conf Rsp */\n\t\t\t\tresult = L2CAP_CONF_PENDING;\n\t\t\t\tset_bit(CONF_LOC_CONF_PEND, &chan->conf_state);\n\t\t\t}\n\t\t}\n\n\t\tswitch (rfc.mode) {\n\t\tcase L2CAP_MODE_BASIC:\n\t\t\tchan->fcs = L2CAP_FCS_NONE;\n\t\t\tset_bit(CONF_MODE_DONE, &chan->conf_state);\n\t\t\tbreak;\n\n\t\tcase L2CAP_MODE_ERTM:\n\t\t\tif (!test_bit(CONF_EWS_RECV, &chan->conf_state))\n\t\t\t\tchan->remote_tx_win = rfc.txwin_size;\n\t\t\telse\n\t\t\t\trfc.txwin_size = L2CAP_DEFAULT_TX_WINDOW;\n\n\t\t\tchan->remote_max_tx = rfc.max_transmit;\n\n\t\t\tsize = min_t(u16, le16_to_cpu(rfc.max_pdu_size),\n\t\t\t\t     chan->conn->mtu - L2CAP_EXT_HDR_SIZE -\n\t\t\t\t     L2CAP_SDULEN_SIZE - L2CAP_FCS_SIZE);\n\t\t\trfc.max_pdu_size = cpu_to_le16(size);\n\t\t\tchan->remote_mps = size;\n\n\t\t\t__l2cap_set_ertm_timeouts(chan, &rfc);\n\n\t\t\tset_bit(CONF_MODE_DONE, &chan->conf_state);\n\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC,\n\t\t\t\t\t   sizeof(rfc), (unsigned long) &rfc, endptr - ptr);\n\n\t\t\tif (test_bit(FLAG_EFS_ENABLE, &chan->flags)) {\n\t\t\t\tchan->remote_id = efs.id;\n\t\t\t\tchan->remote_stype = efs.stype;\n\t\t\t\tchan->remote_msdu = le16_to_cpu(efs.msdu);\n\t\t\t\tchan->remote_flush_to =\n\t\t\t\t\tle32_to_cpu(efs.flush_to);\n\t\t\t\tchan->remote_acc_lat =\n\t\t\t\t\tle32_to_cpu(efs.acc_lat);\n\t\t\t\tchan->remote_sdu_itime =\n\t\t\t\t\tle32_to_cpu(efs.sdu_itime);\n\t\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EFS,\n\t\t\t\t\t\t   sizeof(efs),\n\t\t\t\t\t\t   (unsigned long) &efs, endptr - ptr);\n\t\t\t}\n\t\t\tbreak;\n\n\t\tcase L2CAP_MODE_STREAMING:\n\t\t\tsize = min_t(u16, le16_to_cpu(rfc.max_pdu_size),\n\t\t\t\t     chan->conn->mtu - L2CAP_EXT_HDR_SIZE -\n\t\t\t\t     L2CAP_SDULEN_SIZE - L2CAP_FCS_SIZE);\n\t\t\trfc.max_pdu_size = cpu_to_le16(size);\n\t\t\tchan->remote_mps = size;\n\n\t\t\tset_bit(CONF_MODE_DONE, &chan->conf_state);\n\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC, sizeof(rfc),\n\t\t\t\t\t   (unsigned long) &rfc, endptr - ptr);\n\n\t\t\tbreak;\n\n\t\tdefault:\n\t\t\tresult = L2CAP_CONF_UNACCEPT;\n\n\t\t\tmemset(&rfc, 0, sizeof(rfc));\n\t\t\trfc.mode = chan->mode;\n\t\t}\n\n\t\tif (result == L2CAP_CONF_SUCCESS)\n\t\t\tset_bit(CONF_OUTPUT_DONE, &chan->conf_state);\n\t}\n\trsp->scid   = cpu_to_le16(chan->dcid);\n\trsp->result = cpu_to_le16(result);\n\trsp->flags  = cpu_to_le16(0);\n\n\treturn ptr - data;\n}",
+                "code_after_change": "static int l2cap_parse_conf_req(struct l2cap_chan *chan, void *data, size_t data_size)\n{\n\tstruct l2cap_conf_rsp *rsp = data;\n\tvoid *ptr = rsp->data;\n\tvoid *endptr = data + data_size;\n\tvoid *req = chan->conf_req;\n\tint len = chan->conf_len;\n\tint type, hint, olen;\n\tunsigned long val;\n\tstruct l2cap_conf_rfc rfc = { .mode = L2CAP_MODE_BASIC };\n\tstruct l2cap_conf_efs efs;\n\tu8 remote_efs = 0;\n\tu16 mtu = L2CAP_DEFAULT_MTU;\n\tu16 result = L2CAP_CONF_SUCCESS;\n\tu16 size;\n\n\tBT_DBG(\"chan %p\", chan);\n\n\twhile (len >= L2CAP_CONF_OPT_SIZE) {\n\t\tlen -= l2cap_get_conf_opt(&req, &type, &olen, &val);\n\t\tif (len < 0)\n\t\t\tbreak;\n\n\t\thint  = type & L2CAP_CONF_HINT;\n\t\ttype &= L2CAP_CONF_MASK;\n\n\t\tswitch (type) {\n\t\tcase L2CAP_CONF_MTU:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tmtu = val;\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FLUSH_TO:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tchan->flush_to = val;\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_QOS:\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_RFC:\n\t\t\tif (olen != sizeof(rfc))\n\t\t\t\tbreak;\n\t\t\tmemcpy(&rfc, (void *) val, olen);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_FCS:\n\t\t\tif (olen != 1)\n\t\t\t\tbreak;\n\t\t\tif (val == L2CAP_FCS_NONE)\n\t\t\t\tset_bit(CONF_RECV_NO_FCS, &chan->conf_state);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EFS:\n\t\t\tif (olen != sizeof(efs))\n\t\t\t\tbreak;\n\t\t\tremote_efs = 1;\n\t\t\tmemcpy(&efs, (void *) val, olen);\n\t\t\tbreak;\n\n\t\tcase L2CAP_CONF_EWS:\n\t\t\tif (olen != 2)\n\t\t\t\tbreak;\n\t\t\tif (!(chan->conn->local_fixed_chan & L2CAP_FC_A2MP))\n\t\t\t\treturn -ECONNREFUSED;\n\t\t\tset_bit(FLAG_EXT_CTRL, &chan->flags);\n\t\t\tset_bit(CONF_EWS_RECV, &chan->conf_state);\n\t\t\tchan->tx_win_max = L2CAP_DEFAULT_EXT_WINDOW;\n\t\t\tchan->remote_tx_win = val;\n\t\t\tbreak;\n\n\t\tdefault:\n\t\t\tif (hint)\n\t\t\t\tbreak;\n\t\t\tresult = L2CAP_CONF_UNKNOWN;\n\t\t\t*((u8 *) ptr++) = type;\n\t\t\tbreak;\n\t\t}\n\t}\n\n\tif (chan->num_conf_rsp || chan->num_conf_req > 1)\n\t\tgoto done;\n\n\tswitch (chan->mode) {\n\tcase L2CAP_MODE_STREAMING:\n\tcase L2CAP_MODE_ERTM:\n\t\tif (!test_bit(CONF_STATE2_DEVICE, &chan->conf_state)) {\n\t\t\tchan->mode = l2cap_select_mode(rfc.mode,\n\t\t\t\t\t\t       chan->conn->feat_mask);\n\t\t\tbreak;\n\t\t}\n\n\t\tif (remote_efs) {\n\t\t\tif (__l2cap_efs_supported(chan->conn))\n\t\t\t\tset_bit(FLAG_EFS_ENABLE, &chan->flags);\n\t\t\telse\n\t\t\t\treturn -ECONNREFUSED;\n\t\t}\n\n\t\tif (chan->mode != rfc.mode)\n\t\t\treturn -ECONNREFUSED;\n\n\t\tbreak;\n\t}\n\ndone:\n\tif (chan->mode != rfc.mode) {\n\t\tresult = L2CAP_CONF_UNACCEPT;\n\t\trfc.mode = chan->mode;\n\n\t\tif (chan->num_conf_rsp == 1)\n\t\t\treturn -ECONNREFUSED;\n\n\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC, sizeof(rfc),\n\t\t\t\t   (unsigned long) &rfc, endptr - ptr);\n\t}\n\n\tif (result == L2CAP_CONF_SUCCESS) {\n\t\t/* Configure output options and let the other side know\n\t\t * which ones we don't like. */\n\n\t\tif (mtu < L2CAP_DEFAULT_MIN_MTU)\n\t\t\tresult = L2CAP_CONF_UNACCEPT;\n\t\telse {\n\t\t\tchan->omtu = mtu;\n\t\t\tset_bit(CONF_MTU_DONE, &chan->conf_state);\n\t\t}\n\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_MTU, 2, chan->omtu, endptr - ptr);\n\n\t\tif (remote_efs) {\n\t\t\tif (chan->local_stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != L2CAP_SERV_NOTRAFIC &&\n\t\t\t    efs.stype != chan->local_stype) {\n\n\t\t\t\tresult = L2CAP_CONF_UNACCEPT;\n\n\t\t\t\tif (chan->num_conf_req >= 1)\n\t\t\t\t\treturn -ECONNREFUSED;\n\n\t\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EFS,\n\t\t\t\t\t\t   sizeof(efs),\n\t\t\t\t\t\t   (unsigned long) &efs, endptr - ptr);\n\t\t\t} else {\n\t\t\t\t/* Send PENDING Conf Rsp */\n\t\t\t\tresult = L2CAP_CONF_PENDING;\n\t\t\t\tset_bit(CONF_LOC_CONF_PEND, &chan->conf_state);\n\t\t\t}\n\t\t}\n\n\t\tswitch (rfc.mode) {\n\t\tcase L2CAP_MODE_BASIC:\n\t\t\tchan->fcs = L2CAP_FCS_NONE;\n\t\t\tset_bit(CONF_MODE_DONE, &chan->conf_state);\n\t\t\tbreak;\n\n\t\tcase L2CAP_MODE_ERTM:\n\t\t\tif (!test_bit(CONF_EWS_RECV, &chan->conf_state))\n\t\t\t\tchan->remote_tx_win = rfc.txwin_size;\n\t\t\telse\n\t\t\t\trfc.txwin_size = L2CAP_DEFAULT_TX_WINDOW;\n\n\t\t\tchan->remote_max_tx = rfc.max_transmit;\n\n\t\t\tsize = min_t(u16, le16_to_cpu(rfc.max_pdu_size),\n\t\t\t\t     chan->conn->mtu - L2CAP_EXT_HDR_SIZE -\n\t\t\t\t     L2CAP_SDULEN_SIZE - L2CAP_FCS_SIZE);\n\t\t\trfc.max_pdu_size = cpu_to_le16(size);\n\t\t\tchan->remote_mps = size;\n\n\t\t\t__l2cap_set_ertm_timeouts(chan, &rfc);\n\n\t\t\tset_bit(CONF_MODE_DONE, &chan->conf_state);\n\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC,\n\t\t\t\t\t   sizeof(rfc), (unsigned long) &rfc, endptr - ptr);\n\n\t\t\tif (test_bit(FLAG_EFS_ENABLE, &chan->flags)) {\n\t\t\t\tchan->remote_id = efs.id;\n\t\t\t\tchan->remote_stype = efs.stype;\n\t\t\t\tchan->remote_msdu = le16_to_cpu(efs.msdu);\n\t\t\t\tchan->remote_flush_to =\n\t\t\t\t\tle32_to_cpu(efs.flush_to);\n\t\t\t\tchan->remote_acc_lat =\n\t\t\t\t\tle32_to_cpu(efs.acc_lat);\n\t\t\t\tchan->remote_sdu_itime =\n\t\t\t\t\tle32_to_cpu(efs.sdu_itime);\n\t\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_EFS,\n\t\t\t\t\t\t   sizeof(efs),\n\t\t\t\t\t\t   (unsigned long) &efs, endptr - ptr);\n\t\t\t}\n\t\t\tbreak;\n\n\t\tcase L2CAP_MODE_STREAMING:\n\t\t\tsize = min_t(u16, le16_to_cpu(rfc.max_pdu_size),\n\t\t\t\t     chan->conn->mtu - L2CAP_EXT_HDR_SIZE -\n\t\t\t\t     L2CAP_SDULEN_SIZE - L2CAP_FCS_SIZE);\n\t\t\trfc.max_pdu_size = cpu_to_le16(size);\n\t\t\tchan->remote_mps = size;\n\n\t\t\tset_bit(CONF_MODE_DONE, &chan->conf_state);\n\n\t\t\tl2cap_add_conf_opt(&ptr, L2CAP_CONF_RFC, sizeof(rfc),\n\t\t\t\t\t   (unsigned long) &rfc, endptr - ptr);\n\n\t\t\tbreak;\n\n\t\tdefault:\n\t\t\tresult = L2CAP_CONF_UNACCEPT;\n\n\t\t\tmemset(&rfc, 0, sizeof(rfc));\n\t\t\trfc.mode = chan->mode;\n\t\t}\n\n\t\tif (result == L2CAP_CONF_SUCCESS)\n\t\t\tset_bit(CONF_OUTPUT_DONE, &chan->conf_state);\n\t}\n\trsp->scid   = cpu_to_le16(chan->dcid);\n\trsp->result = cpu_to_le16(result);\n\trsp->flags  = cpu_to_le16(0);\n\n\treturn ptr - data;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -18,6 +18,8 @@\n \n \twhile (len >= L2CAP_CONF_OPT_SIZE) {\n \t\tlen -= l2cap_get_conf_opt(&req, &type, &olen, &val);\n+\t\tif (len < 0)\n+\t\t\tbreak;\n \n \t\thint  = type & L2CAP_CONF_HINT;\n \t\ttype &= L2CAP_CONF_MASK;",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\tif (len < 0)",
+                        "\t\t\tbreak;"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "A heap address information leak while using L2CAP_GET_CONF_OPT was discovered in the Linux kernel before 5.1-rc1.",
+                "id": 2307
+            }
+        ]
+    },
+    "CVE-2017-17741": {
+        "item": [
+            {
+                "cve_id": "CVE-2017-17741",
+                "code_before_change": "static int write_mmio(struct kvm_vcpu *vcpu, gpa_t gpa, int bytes, void *val)\n{\n\ttrace_kvm_mmio(KVM_TRACE_MMIO_WRITE, bytes, gpa, *(u64 *)val);\n\treturn vcpu_mmio_write(vcpu, gpa, bytes, val);\n}",
+                "code_after_change": "static int write_mmio(struct kvm_vcpu *vcpu, gpa_t gpa, int bytes, void *val)\n{\n\ttrace_kvm_mmio(KVM_TRACE_MMIO_WRITE, bytes, gpa, val);\n\treturn vcpu_mmio_write(vcpu, gpa, bytes, val);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -1,5 +1,5 @@\n static int write_mmio(struct kvm_vcpu *vcpu, gpa_t gpa, int bytes, void *val)\n {\n-\ttrace_kvm_mmio(KVM_TRACE_MMIO_WRITE, bytes, gpa, *(u64 *)val);\n+\ttrace_kvm_mmio(KVM_TRACE_MMIO_WRITE, bytes, gpa, val);\n \treturn vcpu_mmio_write(vcpu, gpa, bytes, val);\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\ttrace_kvm_mmio(KVM_TRACE_MMIO_WRITE, bytes, gpa, val);"
+                    ],
+                    "deleted": [
+                        "\ttrace_kvm_mmio(KVM_TRACE_MMIO_WRITE, bytes, gpa, *(u64 *)val);"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "The KVM implementation in the Linux kernel through 4.14.7 allows attackers to obtain potentially sensitive information from kernel memory, aka a write_mmio stack-based out-of-bounds read, related to arch/x86/kvm/x86.c and include/trace/events/kvm.h.",
+                "id": 1368
+            }
+        ]
+    },
+    "CVE-2017-18344": {
+        "item": [
+            {
+                "cve_id": "CVE-2017-18344",
+                "code_before_change": "void common_timer_get(struct k_itimer *timr, struct itimerspec64 *cur_setting)\n{\n\tconst struct k_clock *kc = timr->kclock;\n\tktime_t now, remaining, iv;\n\tstruct timespec64 ts64;\n\tbool sig_none;\n\n\tsig_none = (timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE;\n\tiv = timr->it_interval;\n\n\t/* interval timer ? */\n\tif (iv) {\n\t\tcur_setting->it_interval = ktime_to_timespec64(iv);\n\t} else if (!timr->it_active) {\n\t\t/*\n\t\t * SIGEV_NONE oneshot timers are never queued. Check them\n\t\t * below.\n\t\t */\n\t\tif (!sig_none)\n\t\t\treturn;\n\t}\n\n\t/*\n\t * The timespec64 based conversion is suboptimal, but it's not\n\t * worth to implement yet another callback.\n\t */\n\tkc->clock_get(timr->it_clock, &ts64);\n\tnow = timespec64_to_ktime(ts64);\n\n\t/*\n\t * When a requeue is pending or this is a SIGEV_NONE timer move the\n\t * expiry time forward by intervals, so expiry is > now.\n\t */\n\tif (iv && (timr->it_requeue_pending & REQUEUE_PENDING || sig_none))\n\t\ttimr->it_overrun += kc->timer_forward(timr, now);\n\n\tremaining = kc->timer_remaining(timr, now);\n\t/* Return 0 only, when the timer is expired and not pending */\n\tif (remaining <= 0) {\n\t\t/*\n\t\t * A single shot SIGEV_NONE timer must return 0, when\n\t\t * it is expired !\n\t\t */\n\t\tif (!sig_none)\n\t\t\tcur_setting->it_value.tv_nsec = 1;\n\t} else {\n\t\tcur_setting->it_value = ktime_to_timespec64(remaining);\n\t}\n}",
+                "code_after_change": "void common_timer_get(struct k_itimer *timr, struct itimerspec64 *cur_setting)\n{\n\tconst struct k_clock *kc = timr->kclock;\n\tktime_t now, remaining, iv;\n\tstruct timespec64 ts64;\n\tbool sig_none;\n\n\tsig_none = timr->it_sigev_notify == SIGEV_NONE;\n\tiv = timr->it_interval;\n\n\t/* interval timer ? */\n\tif (iv) {\n\t\tcur_setting->it_interval = ktime_to_timespec64(iv);\n\t} else if (!timr->it_active) {\n\t\t/*\n\t\t * SIGEV_NONE oneshot timers are never queued. Check them\n\t\t * below.\n\t\t */\n\t\tif (!sig_none)\n\t\t\treturn;\n\t}\n\n\t/*\n\t * The timespec64 based conversion is suboptimal, but it's not\n\t * worth to implement yet another callback.\n\t */\n\tkc->clock_get(timr->it_clock, &ts64);\n\tnow = timespec64_to_ktime(ts64);\n\n\t/*\n\t * When a requeue is pending or this is a SIGEV_NONE timer move the\n\t * expiry time forward by intervals, so expiry is > now.\n\t */\n\tif (iv && (timr->it_requeue_pending & REQUEUE_PENDING || sig_none))\n\t\ttimr->it_overrun += kc->timer_forward(timr, now);\n\n\tremaining = kc->timer_remaining(timr, now);\n\t/* Return 0 only, when the timer is expired and not pending */\n\tif (remaining <= 0) {\n\t\t/*\n\t\t * A single shot SIGEV_NONE timer must return 0, when\n\t\t * it is expired !\n\t\t */\n\t\tif (!sig_none)\n\t\t\tcur_setting->it_value.tv_nsec = 1;\n\t} else {\n\t\tcur_setting->it_value = ktime_to_timespec64(remaining);\n\t}\n}",
+                "patch": "--- code before\n+++ code after\n@@ -5,7 +5,7 @@\n \tstruct timespec64 ts64;\n \tbool sig_none;\n \n-\tsig_none = (timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE;\n+\tsig_none = timr->it_sigev_notify == SIGEV_NONE;\n \tiv = timr->it_interval;\n \n \t/* interval timer ? */",
+                "function_modified_lines": {
+                    "added": [
+                        "\tsig_none = timr->it_sigev_notify == SIGEV_NONE;"
+                    ],
+                    "deleted": [
+                        "\tsig_none = (timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE;"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "The timer_create syscall implementation in kernel/time/posix-timers.c in the Linux kernel before 4.14.8 doesn't properly validate the sigevent->sigev_notify field, which leads to out-of-bounds access in the show_timer function (called when /proc/$PID/timers is read). This allows userspace applications to read arbitrary kernel memory (on a kernel built with CONFIG_POSIX_TIMERS and CONFIG_CHECKPOINT_RESTORE).",
+                "id": 1431
+            }
+        ]
+    },
+    "CVE-2022-47520": {
+        "item": [
+            {
+                "cve_id": "CVE-2022-47520",
+                "code_before_change": "void *wilc_parse_join_bss_param(struct cfg80211_bss *bss,\n\t\t\t\tstruct cfg80211_crypto_settings *crypto)\n{\n\tstruct wilc_join_bss_param *param;\n\tstruct ieee80211_p2p_noa_attr noa_attr;\n\tu8 rates_len = 0;\n\tconst u8 *tim_elm, *ssid_elm, *rates_ie, *supp_rates_ie;\n\tconst u8 *ht_ie, *wpa_ie, *wmm_ie, *rsn_ie;\n\tint ret;\n\tconst struct cfg80211_bss_ies *ies = rcu_dereference(bss->ies);\n\n\tparam = kzalloc(sizeof(*param), GFP_KERNEL);\n\tif (!param)\n\t\treturn NULL;\n\n\tparam->beacon_period = cpu_to_le16(bss->beacon_interval);\n\tparam->cap_info = cpu_to_le16(bss->capability);\n\tparam->bss_type = WILC_FW_BSS_TYPE_INFRA;\n\tparam->ch = ieee80211_frequency_to_channel(bss->channel->center_freq);\n\tether_addr_copy(param->bssid, bss->bssid);\n\n\tssid_elm = cfg80211_find_ie(WLAN_EID_SSID, ies->data, ies->len);\n\tif (ssid_elm) {\n\t\tif (ssid_elm[1] <= IEEE80211_MAX_SSID_LEN)\n\t\t\tmemcpy(param->ssid, ssid_elm + 2, ssid_elm[1]);\n\t}\n\n\ttim_elm = cfg80211_find_ie(WLAN_EID_TIM, ies->data, ies->len);\n\tif (tim_elm && tim_elm[1] >= 2)\n\t\tparam->dtim_period = tim_elm[3];\n\n\tmemset(param->p_suites, 0xFF, 3);\n\tmemset(param->akm_suites, 0xFF, 3);\n\n\trates_ie = cfg80211_find_ie(WLAN_EID_SUPP_RATES, ies->data, ies->len);\n\tif (rates_ie) {\n\t\trates_len = rates_ie[1];\n\t\tif (rates_len > WILC_MAX_RATES_SUPPORTED)\n\t\t\trates_len = WILC_MAX_RATES_SUPPORTED;\n\t\tparam->supp_rates[0] = rates_len;\n\t\tmemcpy(&param->supp_rates[1], rates_ie + 2, rates_len);\n\t}\n\n\tif (rates_len < WILC_MAX_RATES_SUPPORTED) {\n\t\tsupp_rates_ie = cfg80211_find_ie(WLAN_EID_EXT_SUPP_RATES,\n\t\t\t\t\t\t ies->data, ies->len);\n\t\tif (supp_rates_ie) {\n\t\t\tu8 ext_rates = supp_rates_ie[1];\n\n\t\t\tif (ext_rates > (WILC_MAX_RATES_SUPPORTED - rates_len))\n\t\t\t\tparam->supp_rates[0] = WILC_MAX_RATES_SUPPORTED;\n\t\t\telse\n\t\t\t\tparam->supp_rates[0] += ext_rates;\n\n\t\t\tmemcpy(&param->supp_rates[rates_len + 1],\n\t\t\t       supp_rates_ie + 2,\n\t\t\t       (param->supp_rates[0] - rates_len));\n\t\t}\n\t}\n\n\tht_ie = cfg80211_find_ie(WLAN_EID_HT_CAPABILITY, ies->data, ies->len);\n\tif (ht_ie)\n\t\tparam->ht_capable = true;\n\n\tret = cfg80211_get_p2p_attr(ies->data, ies->len,\n\t\t\t\t    IEEE80211_P2P_ATTR_ABSENCE_NOTICE,\n\t\t\t\t    (u8 *)&noa_attr, sizeof(noa_attr));\n\tif (ret > 0) {\n\t\tparam->tsf_lo = cpu_to_le32(ies->tsf);\n\t\tparam->noa_enabled = 1;\n\t\tparam->idx = noa_attr.index;\n\t\tif (noa_attr.oppps_ctwindow & IEEE80211_P2P_OPPPS_ENABLE_BIT) {\n\t\t\tparam->opp_enabled = 1;\n\t\t\tparam->opp_en.ct_window = noa_attr.oppps_ctwindow;\n\t\t\tparam->opp_en.cnt = noa_attr.desc[0].count;\n\t\t\tparam->opp_en.duration = noa_attr.desc[0].duration;\n\t\t\tparam->opp_en.interval = noa_attr.desc[0].interval;\n\t\t\tparam->opp_en.start_time = noa_attr.desc[0].start_time;\n\t\t} else {\n\t\t\tparam->opp_enabled = 0;\n\t\t\tparam->opp_dis.cnt = noa_attr.desc[0].count;\n\t\t\tparam->opp_dis.duration = noa_attr.desc[0].duration;\n\t\t\tparam->opp_dis.interval = noa_attr.desc[0].interval;\n\t\t\tparam->opp_dis.start_time = noa_attr.desc[0].start_time;\n\t\t}\n\t}\n\twmm_ie = cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,\n\t\t\t\t\t WLAN_OUI_TYPE_MICROSOFT_WMM,\n\t\t\t\t\t ies->data, ies->len);\n\tif (wmm_ie) {\n\t\tstruct ieee80211_wmm_param_ie *ie;\n\n\t\tie = (struct ieee80211_wmm_param_ie *)wmm_ie;\n\t\tif ((ie->oui_subtype == 0 || ie->oui_subtype == 1) &&\n\t\t    ie->version == 1) {\n\t\t\tparam->wmm_cap = true;\n\t\t\tif (ie->qos_info & BIT(7))\n\t\t\t\tparam->uapsd_cap = true;\n\t\t}\n\t}\n\n\twpa_ie = cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,\n\t\t\t\t\t WLAN_OUI_TYPE_MICROSOFT_WPA,\n\t\t\t\t\t ies->data, ies->len);\n\tif (wpa_ie) {\n\t\tparam->mode_802_11i = 1;\n\t\tparam->rsn_found = true;\n\t}\n\n\trsn_ie = cfg80211_find_ie(WLAN_EID_RSN, ies->data, ies->len);\n\tif (rsn_ie) {\n\t\tint offset = 8;\n\n\t\tparam->mode_802_11i = 2;\n\t\tparam->rsn_found = true;\n\t\t/* extract RSN capabilities */\n\t\toffset += (rsn_ie[offset] * 4) + 2;\n\t\toffset += (rsn_ie[offset] * 4) + 2;\n\t\tmemcpy(param->rsn_cap, &rsn_ie[offset], 2);\n\t}\n\n\tif (param->rsn_found) {\n\t\tint i;\n\n\t\tparam->rsn_grp_policy = crypto->cipher_group & 0xFF;\n\t\tfor (i = 0; i < crypto->n_ciphers_pairwise && i < 3; i++)\n\t\t\tparam->p_suites[i] = crypto->ciphers_pairwise[i] & 0xFF;\n\n\t\tfor (i = 0; i < crypto->n_akm_suites && i < 3; i++)\n\t\t\tparam->akm_suites[i] = crypto->akm_suites[i] & 0xFF;\n\t}\n\n\treturn (void *)param;\n}",
+                "code_after_change": "void *wilc_parse_join_bss_param(struct cfg80211_bss *bss,\n\t\t\t\tstruct cfg80211_crypto_settings *crypto)\n{\n\tstruct wilc_join_bss_param *param;\n\tstruct ieee80211_p2p_noa_attr noa_attr;\n\tu8 rates_len = 0;\n\tconst u8 *tim_elm, *ssid_elm, *rates_ie, *supp_rates_ie;\n\tconst u8 *ht_ie, *wpa_ie, *wmm_ie, *rsn_ie;\n\tint ret;\n\tconst struct cfg80211_bss_ies *ies = rcu_dereference(bss->ies);\n\n\tparam = kzalloc(sizeof(*param), GFP_KERNEL);\n\tif (!param)\n\t\treturn NULL;\n\n\tparam->beacon_period = cpu_to_le16(bss->beacon_interval);\n\tparam->cap_info = cpu_to_le16(bss->capability);\n\tparam->bss_type = WILC_FW_BSS_TYPE_INFRA;\n\tparam->ch = ieee80211_frequency_to_channel(bss->channel->center_freq);\n\tether_addr_copy(param->bssid, bss->bssid);\n\n\tssid_elm = cfg80211_find_ie(WLAN_EID_SSID, ies->data, ies->len);\n\tif (ssid_elm) {\n\t\tif (ssid_elm[1] <= IEEE80211_MAX_SSID_LEN)\n\t\t\tmemcpy(param->ssid, ssid_elm + 2, ssid_elm[1]);\n\t}\n\n\ttim_elm = cfg80211_find_ie(WLAN_EID_TIM, ies->data, ies->len);\n\tif (tim_elm && tim_elm[1] >= 2)\n\t\tparam->dtim_period = tim_elm[3];\n\n\tmemset(param->p_suites, 0xFF, 3);\n\tmemset(param->akm_suites, 0xFF, 3);\n\n\trates_ie = cfg80211_find_ie(WLAN_EID_SUPP_RATES, ies->data, ies->len);\n\tif (rates_ie) {\n\t\trates_len = rates_ie[1];\n\t\tif (rates_len > WILC_MAX_RATES_SUPPORTED)\n\t\t\trates_len = WILC_MAX_RATES_SUPPORTED;\n\t\tparam->supp_rates[0] = rates_len;\n\t\tmemcpy(&param->supp_rates[1], rates_ie + 2, rates_len);\n\t}\n\n\tif (rates_len < WILC_MAX_RATES_SUPPORTED) {\n\t\tsupp_rates_ie = cfg80211_find_ie(WLAN_EID_EXT_SUPP_RATES,\n\t\t\t\t\t\t ies->data, ies->len);\n\t\tif (supp_rates_ie) {\n\t\t\tu8 ext_rates = supp_rates_ie[1];\n\n\t\t\tif (ext_rates > (WILC_MAX_RATES_SUPPORTED - rates_len))\n\t\t\t\tparam->supp_rates[0] = WILC_MAX_RATES_SUPPORTED;\n\t\t\telse\n\t\t\t\tparam->supp_rates[0] += ext_rates;\n\n\t\t\tmemcpy(&param->supp_rates[rates_len + 1],\n\t\t\t       supp_rates_ie + 2,\n\t\t\t       (param->supp_rates[0] - rates_len));\n\t\t}\n\t}\n\n\tht_ie = cfg80211_find_ie(WLAN_EID_HT_CAPABILITY, ies->data, ies->len);\n\tif (ht_ie)\n\t\tparam->ht_capable = true;\n\n\tret = cfg80211_get_p2p_attr(ies->data, ies->len,\n\t\t\t\t    IEEE80211_P2P_ATTR_ABSENCE_NOTICE,\n\t\t\t\t    (u8 *)&noa_attr, sizeof(noa_attr));\n\tif (ret > 0) {\n\t\tparam->tsf_lo = cpu_to_le32(ies->tsf);\n\t\tparam->noa_enabled = 1;\n\t\tparam->idx = noa_attr.index;\n\t\tif (noa_attr.oppps_ctwindow & IEEE80211_P2P_OPPPS_ENABLE_BIT) {\n\t\t\tparam->opp_enabled = 1;\n\t\t\tparam->opp_en.ct_window = noa_attr.oppps_ctwindow;\n\t\t\tparam->opp_en.cnt = noa_attr.desc[0].count;\n\t\t\tparam->opp_en.duration = noa_attr.desc[0].duration;\n\t\t\tparam->opp_en.interval = noa_attr.desc[0].interval;\n\t\t\tparam->opp_en.start_time = noa_attr.desc[0].start_time;\n\t\t} else {\n\t\t\tparam->opp_enabled = 0;\n\t\t\tparam->opp_dis.cnt = noa_attr.desc[0].count;\n\t\t\tparam->opp_dis.duration = noa_attr.desc[0].duration;\n\t\t\tparam->opp_dis.interval = noa_attr.desc[0].interval;\n\t\t\tparam->opp_dis.start_time = noa_attr.desc[0].start_time;\n\t\t}\n\t}\n\twmm_ie = cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,\n\t\t\t\t\t WLAN_OUI_TYPE_MICROSOFT_WMM,\n\t\t\t\t\t ies->data, ies->len);\n\tif (wmm_ie) {\n\t\tstruct ieee80211_wmm_param_ie *ie;\n\n\t\tie = (struct ieee80211_wmm_param_ie *)wmm_ie;\n\t\tif ((ie->oui_subtype == 0 || ie->oui_subtype == 1) &&\n\t\t    ie->version == 1) {\n\t\t\tparam->wmm_cap = true;\n\t\t\tif (ie->qos_info & BIT(7))\n\t\t\t\tparam->uapsd_cap = true;\n\t\t}\n\t}\n\n\twpa_ie = cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,\n\t\t\t\t\t WLAN_OUI_TYPE_MICROSOFT_WPA,\n\t\t\t\t\t ies->data, ies->len);\n\tif (wpa_ie) {\n\t\tparam->mode_802_11i = 1;\n\t\tparam->rsn_found = true;\n\t}\n\n\trsn_ie = cfg80211_find_ie(WLAN_EID_RSN, ies->data, ies->len);\n\tif (rsn_ie) {\n\t\tint rsn_ie_len = sizeof(struct element) + rsn_ie[1];\n\t\tint offset = 8;\n\n\t\t/* extract RSN capabilities */\n\t\tif (offset < rsn_ie_len) {\n\t\t\t/* skip over pairwise suites */\n\t\t\toffset += (rsn_ie[offset] * 4) + 2;\n\n\t\t\tif (offset < rsn_ie_len) {\n\t\t\t\t/* skip over authentication suites */\n\t\t\t\toffset += (rsn_ie[offset] * 4) + 2;\n\n\t\t\t\tif (offset + 1 < rsn_ie_len) {\n\t\t\t\t\tparam->mode_802_11i = 2;\n\t\t\t\t\tparam->rsn_found = true;\n\t\t\t\t\tmemcpy(param->rsn_cap, &rsn_ie[offset], 2);\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\n\tif (param->rsn_found) {\n\t\tint i;\n\n\t\tparam->rsn_grp_policy = crypto->cipher_group & 0xFF;\n\t\tfor (i = 0; i < crypto->n_ciphers_pairwise && i < 3; i++)\n\t\t\tparam->p_suites[i] = crypto->ciphers_pairwise[i] & 0xFF;\n\n\t\tfor (i = 0; i < crypto->n_akm_suites && i < 3; i++)\n\t\t\tparam->akm_suites[i] = crypto->akm_suites[i] & 0xFF;\n\t}\n\n\treturn (void *)param;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -109,14 +109,25 @@\n \n \trsn_ie = cfg80211_find_ie(WLAN_EID_RSN, ies->data, ies->len);\n \tif (rsn_ie) {\n+\t\tint rsn_ie_len = sizeof(struct element) + rsn_ie[1];\n \t\tint offset = 8;\n \n-\t\tparam->mode_802_11i = 2;\n-\t\tparam->rsn_found = true;\n \t\t/* extract RSN capabilities */\n-\t\toffset += (rsn_ie[offset] * 4) + 2;\n-\t\toffset += (rsn_ie[offset] * 4) + 2;\n-\t\tmemcpy(param->rsn_cap, &rsn_ie[offset], 2);\n+\t\tif (offset < rsn_ie_len) {\n+\t\t\t/* skip over pairwise suites */\n+\t\t\toffset += (rsn_ie[offset] * 4) + 2;\n+\n+\t\t\tif (offset < rsn_ie_len) {\n+\t\t\t\t/* skip over authentication suites */\n+\t\t\t\toffset += (rsn_ie[offset] * 4) + 2;\n+\n+\t\t\t\tif (offset + 1 < rsn_ie_len) {\n+\t\t\t\t\tparam->mode_802_11i = 2;\n+\t\t\t\t\tparam->rsn_found = true;\n+\t\t\t\t\tmemcpy(param->rsn_cap, &rsn_ie[offset], 2);\n+\t\t\t\t}\n+\t\t\t}\n+\t\t}\n \t}\n \n \tif (param->rsn_found) {",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\tint rsn_ie_len = sizeof(struct element) + rsn_ie[1];",
+                        "\t\tif (offset < rsn_ie_len) {",
+                        "\t\t\t/* skip over pairwise suites */",
+                        "\t\t\toffset += (rsn_ie[offset] * 4) + 2;",
+                        "",
+                        "\t\t\tif (offset < rsn_ie_len) {",
+                        "\t\t\t\t/* skip over authentication suites */",
+                        "\t\t\t\toffset += (rsn_ie[offset] * 4) + 2;",
+                        "",
+                        "\t\t\t\tif (offset + 1 < rsn_ie_len) {",
+                        "\t\t\t\t\tparam->mode_802_11i = 2;",
+                        "\t\t\t\t\tparam->rsn_found = true;",
+                        "\t\t\t\t\tmemcpy(param->rsn_cap, &rsn_ie[offset], 2);",
+                        "\t\t\t\t}",
+                        "\t\t\t}",
+                        "\t\t}"
+                    ],
+                    "deleted": [
+                        "\t\tparam->mode_802_11i = 2;",
+                        "\t\tparam->rsn_found = true;",
+                        "\t\toffset += (rsn_ie[offset] * 4) + 2;",
+                        "\t\toffset += (rsn_ie[offset] * 4) + 2;",
+                        "\t\tmemcpy(param->rsn_cap, &rsn_ie[offset], 2);"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 6.0.11. Missing offset validation in drivers/net/wireless/microchip/wilc1000/hif.c in the WILC1000 wireless driver can trigger an out-of-bounds read when parsing a Robust Security Network (RSN) information element from a Netlink packet.",
+                "id": 3765
+            }
+        ]
+    },
+    "CVE-2020-28097": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-28097",
+                "code_before_change": "static bool vgacon_scroll(struct vc_data *c, unsigned int t, unsigned int b,\n\t\tenum con_scroll dir, unsigned int lines)\n{\n\tunsigned long oldo;\n\tunsigned int delta;\n\n\tif (t || b != c->vc_rows || vga_is_gfx || c->vc_mode != KD_TEXT)\n\t\treturn false;\n\n\tif (!vga_hardscroll_enabled || lines >= c->vc_rows / 2)\n\t\treturn false;\n\n\tvgacon_restore_screen(c);\n\toldo = c->vc_origin;\n\tdelta = lines * c->vc_size_row;\n\tif (dir == SM_UP) {\n\t\tvgacon_scrollback_update(c, t, lines);\n\t\tif (c->vc_scr_end + delta >= vga_vram_end) {\n\t\t\tscr_memcpyw((u16 *) vga_vram_base,\n\t\t\t\t    (u16 *) (oldo + delta),\n\t\t\t\t    c->vc_screenbuf_size - delta);\n\t\t\tc->vc_origin = vga_vram_base;\n\t\t\tvga_rolled_over = oldo - vga_vram_base;\n\t\t} else\n\t\t\tc->vc_origin += delta;\n\t\tscr_memsetw((u16 *) (c->vc_origin + c->vc_screenbuf_size -\n\t\t\t\t     delta), c->vc_video_erase_char,\n\t\t\t    delta);\n\t} else {\n\t\tif (oldo - delta < vga_vram_base) {\n\t\t\tscr_memmovew((u16 *) (vga_vram_end -\n\t\t\t\t\t      c->vc_screenbuf_size +\n\t\t\t\t\t      delta), (u16 *) oldo,\n\t\t\t\t     c->vc_screenbuf_size - delta);\n\t\t\tc->vc_origin = vga_vram_end - c->vc_screenbuf_size;\n\t\t\tvga_rolled_over = 0;\n\t\t} else\n\t\t\tc->vc_origin -= delta;\n\t\tc->vc_scr_end = c->vc_origin + c->vc_screenbuf_size;\n\t\tscr_memsetw((u16 *) (c->vc_origin), c->vc_video_erase_char,\n\t\t\t    delta);\n\t}\n\tc->vc_scr_end = c->vc_origin + c->vc_screenbuf_size;\n\tc->vc_visible_origin = c->vc_origin;\n\tvga_set_mem_top(c);\n\tc->vc_pos = (c->vc_pos - oldo) + c->vc_origin;\n\treturn true;\n}",
+                "code_after_change": "static bool vgacon_scroll(struct vc_data *c, unsigned int t, unsigned int b,\n\t\tenum con_scroll dir, unsigned int lines)\n{\n\tunsigned long oldo;\n\tunsigned int delta;\n\n\tif (t || b != c->vc_rows || vga_is_gfx || c->vc_mode != KD_TEXT)\n\t\treturn false;\n\n\tif (!vga_hardscroll_enabled || lines >= c->vc_rows / 2)\n\t\treturn false;\n\n\tvgacon_restore_screen(c);\n\toldo = c->vc_origin;\n\tdelta = lines * c->vc_size_row;\n\tif (dir == SM_UP) {\n\t\tif (c->vc_scr_end + delta >= vga_vram_end) {\n\t\t\tscr_memcpyw((u16 *) vga_vram_base,\n\t\t\t\t    (u16 *) (oldo + delta),\n\t\t\t\t    c->vc_screenbuf_size - delta);\n\t\t\tc->vc_origin = vga_vram_base;\n\t\t\tvga_rolled_over = oldo - vga_vram_base;\n\t\t} else\n\t\t\tc->vc_origin += delta;\n\t\tscr_memsetw((u16 *) (c->vc_origin + c->vc_screenbuf_size -\n\t\t\t\t     delta), c->vc_video_erase_char,\n\t\t\t    delta);\n\t} else {\n\t\tif (oldo - delta < vga_vram_base) {\n\t\t\tscr_memmovew((u16 *) (vga_vram_end -\n\t\t\t\t\t      c->vc_screenbuf_size +\n\t\t\t\t\t      delta), (u16 *) oldo,\n\t\t\t\t     c->vc_screenbuf_size - delta);\n\t\t\tc->vc_origin = vga_vram_end - c->vc_screenbuf_size;\n\t\t\tvga_rolled_over = 0;\n\t\t} else\n\t\t\tc->vc_origin -= delta;\n\t\tc->vc_scr_end = c->vc_origin + c->vc_screenbuf_size;\n\t\tscr_memsetw((u16 *) (c->vc_origin), c->vc_video_erase_char,\n\t\t\t    delta);\n\t}\n\tc->vc_scr_end = c->vc_origin + c->vc_screenbuf_size;\n\tc->vc_visible_origin = c->vc_origin;\n\tvga_set_mem_top(c);\n\tc->vc_pos = (c->vc_pos - oldo) + c->vc_origin;\n\treturn true;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -14,7 +14,6 @@\n \toldo = c->vc_origin;\n \tdelta = lines * c->vc_size_row;\n \tif (dir == SM_UP) {\n-\t\tvgacon_scrollback_update(c, t, lines);\n \t\tif (c->vc_scr_end + delta >= vga_vram_end) {\n \t\t\tscr_memcpyw((u16 *) vga_vram_base,\n \t\t\t\t    (u16 *) (oldo + delta),",
+                "function_modified_lines": {
+                    "added": [],
+                    "deleted": [
+                        "\t\tvgacon_scrollback_update(c, t, lines);"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "The vgacon subsystem in the Linux kernel before 5.8.10 mishandles software scrollback. There is a vgacon_scrolldelta out-of-bounds read, aka CID-973c096f6a85.",
+                "id": 2655
+            }
+        ]
+    },
+    "CVE-2019-15090": {
+        "item": [
+            {
+                "cve_id": "CVE-2019-15090",
+                "code_before_change": "void\nqedi_dbg_notice(struct qedi_dbg_ctx *qedi, const char *func, u32 line,\n\t\tconst char *fmt, ...)\n{\n\tva_list va;\n\tstruct va_format vaf;\n\tchar nfunc[32];\n\n\tmemset(nfunc, 0, sizeof(nfunc));\n\tmemcpy(nfunc, func, sizeof(nfunc) - 1);\n\n\tva_start(va, fmt);\n\n\tvaf.fmt = fmt;\n\tvaf.va = &va;\n\n\tif (!(qedi_dbg_log & QEDI_LOG_NOTICE))\n\t\tgoto ret;\n\n\tif (likely(qedi) && likely(qedi->pdev))\n\t\tpr_notice(\"[%s]:[%s:%d]:%d: %pV\",\n\t\t\t  dev_name(&qedi->pdev->dev), nfunc, line,\n\t\t\t  qedi->host_no, &vaf);\n\telse\n\t\tpr_notice(\"[0000:00:00.0]:[%s:%d]: %pV\", nfunc, line, &vaf);\n\nret:\n\tva_end(va);\n}",
+                "code_after_change": "void\nqedi_dbg_notice(struct qedi_dbg_ctx *qedi, const char *func, u32 line,\n\t\tconst char *fmt, ...)\n{\n\tva_list va;\n\tstruct va_format vaf;\n\n\tva_start(va, fmt);\n\n\tvaf.fmt = fmt;\n\tvaf.va = &va;\n\n\tif (!(qedi_dbg_log & QEDI_LOG_NOTICE))\n\t\tgoto ret;\n\n\tif (likely(qedi) && likely(qedi->pdev))\n\t\tpr_notice(\"[%s]:[%s:%d]:%d: %pV\",\n\t\t\t  dev_name(&qedi->pdev->dev), func, line,\n\t\t\t  qedi->host_no, &vaf);\n\telse\n\t\tpr_notice(\"[0000:00:00.0]:[%s:%d]: %pV\", func, line, &vaf);\n\nret:\n\tva_end(va);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -4,10 +4,6 @@\n {\n \tva_list va;\n \tstruct va_format vaf;\n-\tchar nfunc[32];\n-\n-\tmemset(nfunc, 0, sizeof(nfunc));\n-\tmemcpy(nfunc, func, sizeof(nfunc) - 1);\n \n \tva_start(va, fmt);\n \n@@ -19,10 +15,10 @@\n \n \tif (likely(qedi) && likely(qedi->pdev))\n \t\tpr_notice(\"[%s]:[%s:%d]:%d: %pV\",\n-\t\t\t  dev_name(&qedi->pdev->dev), nfunc, line,\n+\t\t\t  dev_name(&qedi->pdev->dev), func, line,\n \t\t\t  qedi->host_no, &vaf);\n \telse\n-\t\tpr_notice(\"[0000:00:00.0]:[%s:%d]: %pV\", nfunc, line, &vaf);\n+\t\tpr_notice(\"[0000:00:00.0]:[%s:%d]: %pV\", func, line, &vaf);\n \n ret:\n \tva_end(va);",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\t\t  dev_name(&qedi->pdev->dev), func, line,",
+                        "\t\tpr_notice(\"[0000:00:00.0]:[%s:%d]: %pV\", func, line, &vaf);"
+                    ],
+                    "deleted": [
+                        "\tchar nfunc[32];",
+                        "",
+                        "\tmemset(nfunc, 0, sizeof(nfunc));",
+                        "\tmemcpy(nfunc, func, sizeof(nfunc) - 1);",
+                        "\t\t\t  dev_name(&qedi->pdev->dev), nfunc, line,",
+                        "\t\tpr_notice(\"[0000:00:00.0]:[%s:%d]: %pV\", nfunc, line, &vaf);"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in drivers/scsi/qedi/qedi_dbg.c in the Linux kernel before 5.1.12. In the qedi_dbg_* family of functions, there is an out-of-bounds read.",
+                "id": 1984
+            }
+        ]
+    },
+    "CVE-2017-11600": {
+        "item": [
+            {
+                "cve_id": "CVE-2017-11600",
+                "code_before_change": "int xfrm_migrate(const struct xfrm_selector *sel, u8 dir, u8 type,\n\t\t struct xfrm_migrate *m, int num_migrate,\n\t\t struct xfrm_kmaddress *k, struct net *net,\n\t\t struct xfrm_encap_tmpl *encap)\n{\n\tint i, err, nx_cur = 0, nx_new = 0;\n\tstruct xfrm_policy *pol = NULL;\n\tstruct xfrm_state *x, *xc;\n\tstruct xfrm_state *x_cur[XFRM_MAX_DEPTH];\n\tstruct xfrm_state *x_new[XFRM_MAX_DEPTH];\n\tstruct xfrm_migrate *mp;\n\n\tif ((err = xfrm_migrate_check(m, num_migrate)) < 0)\n\t\tgoto out;\n\n\t/* Stage 1 - find policy */\n\tif ((pol = xfrm_migrate_policy_find(sel, dir, type, net)) == NULL) {\n\t\terr = -ENOENT;\n\t\tgoto out;\n\t}\n\n\t/* Stage 2 - find and update state(s) */\n\tfor (i = 0, mp = m; i < num_migrate; i++, mp++) {\n\t\tif ((x = xfrm_migrate_state_find(mp, net))) {\n\t\t\tx_cur[nx_cur] = x;\n\t\t\tnx_cur++;\n\t\t\txc = xfrm_state_migrate(x, mp, encap);\n\t\t\tif (xc) {\n\t\t\t\tx_new[nx_new] = xc;\n\t\t\t\tnx_new++;\n\t\t\t} else {\n\t\t\t\terr = -ENODATA;\n\t\t\t\tgoto restore_state;\n\t\t\t}\n\t\t}\n\t}\n\n\t/* Stage 3 - update policy */\n\tif ((err = xfrm_policy_migrate(pol, m, num_migrate)) < 0)\n\t\tgoto restore_state;\n\n\t/* Stage 4 - delete old state(s) */\n\tif (nx_cur) {\n\t\txfrm_states_put(x_cur, nx_cur);\n\t\txfrm_states_delete(x_cur, nx_cur);\n\t}\n\n\t/* Stage 5 - announce */\n\tkm_migrate(sel, dir, type, m, num_migrate, k, encap);\n\n\txfrm_pol_put(pol);\n\n\treturn 0;\nout:\n\treturn err;\n\nrestore_state:\n\tif (pol)\n\t\txfrm_pol_put(pol);\n\tif (nx_cur)\n\t\txfrm_states_put(x_cur, nx_cur);\n\tif (nx_new)\n\t\txfrm_states_delete(x_new, nx_new);\n\n\treturn err;\n}",
+                "code_after_change": "int xfrm_migrate(const struct xfrm_selector *sel, u8 dir, u8 type,\n\t\t struct xfrm_migrate *m, int num_migrate,\n\t\t struct xfrm_kmaddress *k, struct net *net,\n\t\t struct xfrm_encap_tmpl *encap)\n{\n\tint i, err, nx_cur = 0, nx_new = 0;\n\tstruct xfrm_policy *pol = NULL;\n\tstruct xfrm_state *x, *xc;\n\tstruct xfrm_state *x_cur[XFRM_MAX_DEPTH];\n\tstruct xfrm_state *x_new[XFRM_MAX_DEPTH];\n\tstruct xfrm_migrate *mp;\n\n\t/* Stage 0 - sanity checks */\n\tif ((err = xfrm_migrate_check(m, num_migrate)) < 0)\n\t\tgoto out;\n\n\tif (dir >= XFRM_POLICY_MAX) {\n\t\terr = -EINVAL;\n\t\tgoto out;\n\t}\n\n\t/* Stage 1 - find policy */\n\tif ((pol = xfrm_migrate_policy_find(sel, dir, type, net)) == NULL) {\n\t\terr = -ENOENT;\n\t\tgoto out;\n\t}\n\n\t/* Stage 2 - find and update state(s) */\n\tfor (i = 0, mp = m; i < num_migrate; i++, mp++) {\n\t\tif ((x = xfrm_migrate_state_find(mp, net))) {\n\t\t\tx_cur[nx_cur] = x;\n\t\t\tnx_cur++;\n\t\t\txc = xfrm_state_migrate(x, mp, encap);\n\t\t\tif (xc) {\n\t\t\t\tx_new[nx_new] = xc;\n\t\t\t\tnx_new++;\n\t\t\t} else {\n\t\t\t\terr = -ENODATA;\n\t\t\t\tgoto restore_state;\n\t\t\t}\n\t\t}\n\t}\n\n\t/* Stage 3 - update policy */\n\tif ((err = xfrm_policy_migrate(pol, m, num_migrate)) < 0)\n\t\tgoto restore_state;\n\n\t/* Stage 4 - delete old state(s) */\n\tif (nx_cur) {\n\t\txfrm_states_put(x_cur, nx_cur);\n\t\txfrm_states_delete(x_cur, nx_cur);\n\t}\n\n\t/* Stage 5 - announce */\n\tkm_migrate(sel, dir, type, m, num_migrate, k, encap);\n\n\txfrm_pol_put(pol);\n\n\treturn 0;\nout:\n\treturn err;\n\nrestore_state:\n\tif (pol)\n\t\txfrm_pol_put(pol);\n\tif (nx_cur)\n\t\txfrm_states_put(x_cur, nx_cur);\n\tif (nx_new)\n\t\txfrm_states_delete(x_new, nx_new);\n\n\treturn err;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -10,8 +10,14 @@\n \tstruct xfrm_state *x_new[XFRM_MAX_DEPTH];\n \tstruct xfrm_migrate *mp;\n \n+\t/* Stage 0 - sanity checks */\n \tif ((err = xfrm_migrate_check(m, num_migrate)) < 0)\n \t\tgoto out;\n+\n+\tif (dir >= XFRM_POLICY_MAX) {\n+\t\terr = -EINVAL;\n+\t\tgoto out;\n+\t}\n \n \t/* Stage 1 - find policy */\n \tif ((pol = xfrm_migrate_policy_find(sel, dir, type, net)) == NULL) {",
+                "function_modified_lines": {
+                    "added": [
+                        "\t/* Stage 0 - sanity checks */",
+                        "",
+                        "\tif (dir >= XFRM_POLICY_MAX) {",
+                        "\t\terr = -EINVAL;",
+                        "\t\tgoto out;",
+                        "\t}"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "net/xfrm/xfrm_policy.c in the Linux kernel through 4.12.3, when CONFIG_XFRM_MIGRATE is enabled, does not ensure that the dir value of xfrm_userpolicy_id is XFRM_POLICY_MAX or less, which allows local users to cause a denial of service (out-of-bounds access) or possibly have unspecified other impact via an XFRM_MSG_MIGRATE xfrm Netlink message.",
+                "id": 1252
+            }
+        ]
+    },
+    "CVE-2019-2101": {
+        "item": [
+            {
+                "cve_id": "CVE-2019-2101",
+                "code_before_change": "static int uvc_parse_standard_control(struct uvc_device *dev,\n\tconst unsigned char *buffer, int buflen)\n{\n\tstruct usb_device *udev = dev->udev;\n\tstruct uvc_entity *unit, *term;\n\tstruct usb_interface *intf;\n\tstruct usb_host_interface *alts = dev->intf->cur_altsetting;\n\tunsigned int i, n, p, len;\n\tu16 type;\n\n\tswitch (buffer[2]) {\n\tcase UVC_VC_HEADER:\n\t\tn = buflen >= 12 ? buffer[11] : 0;\n\n\t\tif (buflen < 12 + n) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d HEADER error\\n\", udev->devnum,\n\t\t\t\talts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tdev->uvc_version = get_unaligned_le16(&buffer[3]);\n\t\tdev->clock_frequency = get_unaligned_le32(&buffer[7]);\n\n\t\t/* Parse all USB Video Streaming interfaces. */\n\t\tfor (i = 0; i < n; ++i) {\n\t\t\tintf = usb_ifnum_to_if(udev, buffer[12+i]);\n\t\t\tif (intf == NULL) {\n\t\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d \"\n\t\t\t\t\t\"interface %d doesn't exists\\n\",\n\t\t\t\t\tudev->devnum, i);\n\t\t\t\tcontinue;\n\t\t\t}\n\n\t\t\tuvc_parse_streaming(dev, intf);\n\t\t}\n\t\tbreak;\n\n\tcase UVC_VC_INPUT_TERMINAL:\n\t\tif (buflen < 8) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d INPUT_TERMINAL error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\t/* Make sure the terminal type MSB is not null, otherwise it\n\t\t * could be confused with a unit.\n\t\t */\n\t\ttype = get_unaligned_le16(&buffer[4]);\n\t\tif ((type & 0xff00) == 0) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d INPUT_TERMINAL %d has invalid \"\n\t\t\t\t\"type 0x%04x, skipping\\n\", udev->devnum,\n\t\t\t\talts->desc.bInterfaceNumber,\n\t\t\t\tbuffer[3], type);\n\t\t\treturn 0;\n\t\t}\n\n\t\tn = 0;\n\t\tp = 0;\n\t\tlen = 8;\n\n\t\tif (type == UVC_ITT_CAMERA) {\n\t\t\tn = buflen >= 15 ? buffer[14] : 0;\n\t\t\tlen = 15;\n\n\t\t} else if (type == UVC_ITT_MEDIA_TRANSPORT_INPUT) {\n\t\t\tn = buflen >= 9 ? buffer[8] : 0;\n\t\t\tp = buflen >= 10 + n ? buffer[9+n] : 0;\n\t\t\tlen = 10;\n\t\t}\n\n\t\tif (buflen < len + n + p) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d INPUT_TERMINAL error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tterm = uvc_alloc_entity(type | UVC_TERM_INPUT, buffer[3],\n\t\t\t\t\t1, n + p);\n\t\tif (term == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tif (UVC_ENTITY_TYPE(term) == UVC_ITT_CAMERA) {\n\t\t\tterm->camera.bControlSize = n;\n\t\t\tterm->camera.bmControls = (u8 *)term + sizeof(*term);\n\t\t\tterm->camera.wObjectiveFocalLengthMin =\n\t\t\t\tget_unaligned_le16(&buffer[8]);\n\t\t\tterm->camera.wObjectiveFocalLengthMax =\n\t\t\t\tget_unaligned_le16(&buffer[10]);\n\t\t\tterm->camera.wOcularFocalLength =\n\t\t\t\tget_unaligned_le16(&buffer[12]);\n\t\t\tmemcpy(term->camera.bmControls, &buffer[15], n);\n\t\t} else if (UVC_ENTITY_TYPE(term) ==\n\t\t\t   UVC_ITT_MEDIA_TRANSPORT_INPUT) {\n\t\t\tterm->media.bControlSize = n;\n\t\t\tterm->media.bmControls = (u8 *)term + sizeof(*term);\n\t\t\tterm->media.bTransportModeSize = p;\n\t\t\tterm->media.bmTransportModes = (u8 *)term\n\t\t\t\t\t\t     + sizeof(*term) + n;\n\t\t\tmemcpy(term->media.bmControls, &buffer[9], n);\n\t\t\tmemcpy(term->media.bmTransportModes, &buffer[10+n], p);\n\t\t}\n\n\t\tif (buffer[7] != 0)\n\t\t\tusb_string(udev, buffer[7], term->name,\n\t\t\t\t   sizeof(term->name));\n\t\telse if (UVC_ENTITY_TYPE(term) == UVC_ITT_CAMERA)\n\t\t\tsprintf(term->name, \"Camera %u\", buffer[3]);\n\t\telse if (UVC_ENTITY_TYPE(term) == UVC_ITT_MEDIA_TRANSPORT_INPUT)\n\t\t\tsprintf(term->name, \"Media %u\", buffer[3]);\n\t\telse\n\t\t\tsprintf(term->name, \"Input %u\", buffer[3]);\n\n\t\tlist_add_tail(&term->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_OUTPUT_TERMINAL:\n\t\tif (buflen < 9) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d OUTPUT_TERMINAL error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\t/* Make sure the terminal type MSB is not null, otherwise it\n\t\t * could be confused with a unit.\n\t\t */\n\t\ttype = get_unaligned_le16(&buffer[4]);\n\t\tif ((type & 0xff00) == 0) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d OUTPUT_TERMINAL %d has invalid \"\n\t\t\t\t\"type 0x%04x, skipping\\n\", udev->devnum,\n\t\t\t\talts->desc.bInterfaceNumber, buffer[3], type);\n\t\t\treturn 0;\n\t\t}\n\n\t\tterm = uvc_alloc_entity(type | UVC_TERM_OUTPUT, buffer[3],\n\t\t\t\t\t1, 0);\n\t\tif (term == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(term->baSourceID, &buffer[7], 1);\n\n\t\tif (buffer[8] != 0)\n\t\t\tusb_string(udev, buffer[8], term->name,\n\t\t\t\t   sizeof(term->name));\n\t\telse\n\t\t\tsprintf(term->name, \"Output %u\", buffer[3]);\n\n\t\tlist_add_tail(&term->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_SELECTOR_UNIT:\n\t\tp = buflen >= 5 ? buffer[4] : 0;\n\n\t\tif (buflen < 5 || buflen < 6 + p) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d SELECTOR_UNIT error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tunit = uvc_alloc_entity(buffer[2], buffer[3], p + 1, 0);\n\t\tif (unit == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(unit->baSourceID, &buffer[5], p);\n\n\t\tif (buffer[5+p] != 0)\n\t\t\tusb_string(udev, buffer[5+p], unit->name,\n\t\t\t\t   sizeof(unit->name));\n\t\telse\n\t\t\tsprintf(unit->name, \"Selector %u\", buffer[3]);\n\n\t\tlist_add_tail(&unit->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_PROCESSING_UNIT:\n\t\tn = buflen >= 8 ? buffer[7] : 0;\n\t\tp = dev->uvc_version >= 0x0110 ? 10 : 9;\n\n\t\tif (buflen < p + n) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d PROCESSING_UNIT error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tunit = uvc_alloc_entity(buffer[2], buffer[3], 2, n);\n\t\tif (unit == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(unit->baSourceID, &buffer[4], 1);\n\t\tunit->processing.wMaxMultiplier =\n\t\t\tget_unaligned_le16(&buffer[5]);\n\t\tunit->processing.bControlSize = buffer[7];\n\t\tunit->processing.bmControls = (u8 *)unit + sizeof(*unit);\n\t\tmemcpy(unit->processing.bmControls, &buffer[8], n);\n\t\tif (dev->uvc_version >= 0x0110)\n\t\t\tunit->processing.bmVideoStandards = buffer[9+n];\n\n\t\tif (buffer[8+n] != 0)\n\t\t\tusb_string(udev, buffer[8+n], unit->name,\n\t\t\t\t   sizeof(unit->name));\n\t\telse\n\t\t\tsprintf(unit->name, \"Processing %u\", buffer[3]);\n\n\t\tlist_add_tail(&unit->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_EXTENSION_UNIT:\n\t\tp = buflen >= 22 ? buffer[21] : 0;\n\t\tn = buflen >= 24 + p ? buffer[22+p] : 0;\n\n\t\tif (buflen < 24 + p + n) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d EXTENSION_UNIT error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tunit = uvc_alloc_entity(buffer[2], buffer[3], p + 1, n);\n\t\tif (unit == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(unit->extension.guidExtensionCode, &buffer[4], 16);\n\t\tunit->extension.bNumControls = buffer[20];\n\t\tmemcpy(unit->baSourceID, &buffer[22], p);\n\t\tunit->extension.bControlSize = buffer[22+p];\n\t\tunit->extension.bmControls = (u8 *)unit + sizeof(*unit);\n\t\tmemcpy(unit->extension.bmControls, &buffer[23+p], n);\n\n\t\tif (buffer[23+p+n] != 0)\n\t\t\tusb_string(udev, buffer[23+p+n], unit->name,\n\t\t\t\t   sizeof(unit->name));\n\t\telse\n\t\t\tsprintf(unit->name, \"Extension %u\", buffer[3]);\n\n\t\tlist_add_tail(&unit->list, &dev->entities);\n\t\tbreak;\n\n\tdefault:\n\t\tuvc_trace(UVC_TRACE_DESCR, \"Found an unknown CS_INTERFACE \"\n\t\t\t\"descriptor (%u)\\n\", buffer[2]);\n\t\tbreak;\n\t}\n\n\treturn 0;\n}",
+                "code_after_change": "static int uvc_parse_standard_control(struct uvc_device *dev,\n\tconst unsigned char *buffer, int buflen)\n{\n\tstruct usb_device *udev = dev->udev;\n\tstruct uvc_entity *unit, *term;\n\tstruct usb_interface *intf;\n\tstruct usb_host_interface *alts = dev->intf->cur_altsetting;\n\tunsigned int i, n, p, len;\n\tu16 type;\n\n\tswitch (buffer[2]) {\n\tcase UVC_VC_HEADER:\n\t\tn = buflen >= 12 ? buffer[11] : 0;\n\n\t\tif (buflen < 12 + n) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d HEADER error\\n\", udev->devnum,\n\t\t\t\talts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tdev->uvc_version = get_unaligned_le16(&buffer[3]);\n\t\tdev->clock_frequency = get_unaligned_le32(&buffer[7]);\n\n\t\t/* Parse all USB Video Streaming interfaces. */\n\t\tfor (i = 0; i < n; ++i) {\n\t\t\tintf = usb_ifnum_to_if(udev, buffer[12+i]);\n\t\t\tif (intf == NULL) {\n\t\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d \"\n\t\t\t\t\t\"interface %d doesn't exists\\n\",\n\t\t\t\t\tudev->devnum, i);\n\t\t\t\tcontinue;\n\t\t\t}\n\n\t\t\tuvc_parse_streaming(dev, intf);\n\t\t}\n\t\tbreak;\n\n\tcase UVC_VC_INPUT_TERMINAL:\n\t\tif (buflen < 8) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d INPUT_TERMINAL error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\t/*\n\t\t * Reject invalid terminal types that would cause issues:\n\t\t *\n\t\t * - The high byte must be non-zero, otherwise it would be\n\t\t *   confused with a unit.\n\t\t *\n\t\t * - Bit 15 must be 0, as we use it internally as a terminal\n\t\t *   direction flag.\n\t\t *\n\t\t * Other unknown types are accepted.\n\t\t */\n\t\ttype = get_unaligned_le16(&buffer[4]);\n\t\tif ((type & 0x7f00) == 0 || (type & 0x8000) != 0) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d INPUT_TERMINAL %d has invalid \"\n\t\t\t\t\"type 0x%04x, skipping\\n\", udev->devnum,\n\t\t\t\talts->desc.bInterfaceNumber,\n\t\t\t\tbuffer[3], type);\n\t\t\treturn 0;\n\t\t}\n\n\t\tn = 0;\n\t\tp = 0;\n\t\tlen = 8;\n\n\t\tif (type == UVC_ITT_CAMERA) {\n\t\t\tn = buflen >= 15 ? buffer[14] : 0;\n\t\t\tlen = 15;\n\n\t\t} else if (type == UVC_ITT_MEDIA_TRANSPORT_INPUT) {\n\t\t\tn = buflen >= 9 ? buffer[8] : 0;\n\t\t\tp = buflen >= 10 + n ? buffer[9+n] : 0;\n\t\t\tlen = 10;\n\t\t}\n\n\t\tif (buflen < len + n + p) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d INPUT_TERMINAL error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tterm = uvc_alloc_entity(type | UVC_TERM_INPUT, buffer[3],\n\t\t\t\t\t1, n + p);\n\t\tif (term == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tif (UVC_ENTITY_TYPE(term) == UVC_ITT_CAMERA) {\n\t\t\tterm->camera.bControlSize = n;\n\t\t\tterm->camera.bmControls = (u8 *)term + sizeof(*term);\n\t\t\tterm->camera.wObjectiveFocalLengthMin =\n\t\t\t\tget_unaligned_le16(&buffer[8]);\n\t\t\tterm->camera.wObjectiveFocalLengthMax =\n\t\t\t\tget_unaligned_le16(&buffer[10]);\n\t\t\tterm->camera.wOcularFocalLength =\n\t\t\t\tget_unaligned_le16(&buffer[12]);\n\t\t\tmemcpy(term->camera.bmControls, &buffer[15], n);\n\t\t} else if (UVC_ENTITY_TYPE(term) ==\n\t\t\t   UVC_ITT_MEDIA_TRANSPORT_INPUT) {\n\t\t\tterm->media.bControlSize = n;\n\t\t\tterm->media.bmControls = (u8 *)term + sizeof(*term);\n\t\t\tterm->media.bTransportModeSize = p;\n\t\t\tterm->media.bmTransportModes = (u8 *)term\n\t\t\t\t\t\t     + sizeof(*term) + n;\n\t\t\tmemcpy(term->media.bmControls, &buffer[9], n);\n\t\t\tmemcpy(term->media.bmTransportModes, &buffer[10+n], p);\n\t\t}\n\n\t\tif (buffer[7] != 0)\n\t\t\tusb_string(udev, buffer[7], term->name,\n\t\t\t\t   sizeof(term->name));\n\t\telse if (UVC_ENTITY_TYPE(term) == UVC_ITT_CAMERA)\n\t\t\tsprintf(term->name, \"Camera %u\", buffer[3]);\n\t\telse if (UVC_ENTITY_TYPE(term) == UVC_ITT_MEDIA_TRANSPORT_INPUT)\n\t\t\tsprintf(term->name, \"Media %u\", buffer[3]);\n\t\telse\n\t\t\tsprintf(term->name, \"Input %u\", buffer[3]);\n\n\t\tlist_add_tail(&term->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_OUTPUT_TERMINAL:\n\t\tif (buflen < 9) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d OUTPUT_TERMINAL error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\t/* Make sure the terminal type MSB is not null, otherwise it\n\t\t * could be confused with a unit.\n\t\t */\n\t\ttype = get_unaligned_le16(&buffer[4]);\n\t\tif ((type & 0xff00) == 0) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d OUTPUT_TERMINAL %d has invalid \"\n\t\t\t\t\"type 0x%04x, skipping\\n\", udev->devnum,\n\t\t\t\talts->desc.bInterfaceNumber, buffer[3], type);\n\t\t\treturn 0;\n\t\t}\n\n\t\tterm = uvc_alloc_entity(type | UVC_TERM_OUTPUT, buffer[3],\n\t\t\t\t\t1, 0);\n\t\tif (term == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(term->baSourceID, &buffer[7], 1);\n\n\t\tif (buffer[8] != 0)\n\t\t\tusb_string(udev, buffer[8], term->name,\n\t\t\t\t   sizeof(term->name));\n\t\telse\n\t\t\tsprintf(term->name, \"Output %u\", buffer[3]);\n\n\t\tlist_add_tail(&term->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_SELECTOR_UNIT:\n\t\tp = buflen >= 5 ? buffer[4] : 0;\n\n\t\tif (buflen < 5 || buflen < 6 + p) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d SELECTOR_UNIT error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tunit = uvc_alloc_entity(buffer[2], buffer[3], p + 1, 0);\n\t\tif (unit == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(unit->baSourceID, &buffer[5], p);\n\n\t\tif (buffer[5+p] != 0)\n\t\t\tusb_string(udev, buffer[5+p], unit->name,\n\t\t\t\t   sizeof(unit->name));\n\t\telse\n\t\t\tsprintf(unit->name, \"Selector %u\", buffer[3]);\n\n\t\tlist_add_tail(&unit->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_PROCESSING_UNIT:\n\t\tn = buflen >= 8 ? buffer[7] : 0;\n\t\tp = dev->uvc_version >= 0x0110 ? 10 : 9;\n\n\t\tif (buflen < p + n) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d PROCESSING_UNIT error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tunit = uvc_alloc_entity(buffer[2], buffer[3], 2, n);\n\t\tif (unit == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(unit->baSourceID, &buffer[4], 1);\n\t\tunit->processing.wMaxMultiplier =\n\t\t\tget_unaligned_le16(&buffer[5]);\n\t\tunit->processing.bControlSize = buffer[7];\n\t\tunit->processing.bmControls = (u8 *)unit + sizeof(*unit);\n\t\tmemcpy(unit->processing.bmControls, &buffer[8], n);\n\t\tif (dev->uvc_version >= 0x0110)\n\t\t\tunit->processing.bmVideoStandards = buffer[9+n];\n\n\t\tif (buffer[8+n] != 0)\n\t\t\tusb_string(udev, buffer[8+n], unit->name,\n\t\t\t\t   sizeof(unit->name));\n\t\telse\n\t\t\tsprintf(unit->name, \"Processing %u\", buffer[3]);\n\n\t\tlist_add_tail(&unit->list, &dev->entities);\n\t\tbreak;\n\n\tcase UVC_VC_EXTENSION_UNIT:\n\t\tp = buflen >= 22 ? buffer[21] : 0;\n\t\tn = buflen >= 24 + p ? buffer[22+p] : 0;\n\n\t\tif (buflen < 24 + p + n) {\n\t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n\t\t\t\t\"interface %d EXTENSION_UNIT error\\n\",\n\t\t\t\tudev->devnum, alts->desc.bInterfaceNumber);\n\t\t\treturn -EINVAL;\n\t\t}\n\n\t\tunit = uvc_alloc_entity(buffer[2], buffer[3], p + 1, n);\n\t\tif (unit == NULL)\n\t\t\treturn -ENOMEM;\n\n\t\tmemcpy(unit->extension.guidExtensionCode, &buffer[4], 16);\n\t\tunit->extension.bNumControls = buffer[20];\n\t\tmemcpy(unit->baSourceID, &buffer[22], p);\n\t\tunit->extension.bControlSize = buffer[22+p];\n\t\tunit->extension.bmControls = (u8 *)unit + sizeof(*unit);\n\t\tmemcpy(unit->extension.bmControls, &buffer[23+p], n);\n\n\t\tif (buffer[23+p+n] != 0)\n\t\t\tusb_string(udev, buffer[23+p+n], unit->name,\n\t\t\t\t   sizeof(unit->name));\n\t\telse\n\t\t\tsprintf(unit->name, \"Extension %u\", buffer[3]);\n\n\t\tlist_add_tail(&unit->list, &dev->entities);\n\t\tbreak;\n\n\tdefault:\n\t\tuvc_trace(UVC_TRACE_DESCR, \"Found an unknown CS_INTERFACE \"\n\t\t\t\"descriptor (%u)\\n\", buffer[2]);\n\t\tbreak;\n\t}\n\n\treturn 0;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -44,11 +44,19 @@\n \t\t\treturn -EINVAL;\n \t\t}\n \n-\t\t/* Make sure the terminal type MSB is not null, otherwise it\n-\t\t * could be confused with a unit.\n+\t\t/*\n+\t\t * Reject invalid terminal types that would cause issues:\n+\t\t *\n+\t\t * - The high byte must be non-zero, otherwise it would be\n+\t\t *   confused with a unit.\n+\t\t *\n+\t\t * - Bit 15 must be 0, as we use it internally as a terminal\n+\t\t *   direction flag.\n+\t\t *\n+\t\t * Other unknown types are accepted.\n \t\t */\n \t\ttype = get_unaligned_le16(&buffer[4]);\n-\t\tif ((type & 0xff00) == 0) {\n+\t\tif ((type & 0x7f00) == 0 || (type & 0x8000) != 0) {\n \t\t\tuvc_trace(UVC_TRACE_DESCR, \"device %d videocontrol \"\n \t\t\t\t\"interface %d INPUT_TERMINAL %d has invalid \"\n \t\t\t\t\"type 0x%04x, skipping\\n\", udev->devnum,",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\t/*",
+                        "\t\t * Reject invalid terminal types that would cause issues:",
+                        "\t\t *",
+                        "\t\t * - The high byte must be non-zero, otherwise it would be",
+                        "\t\t *   confused with a unit.",
+                        "\t\t *",
+                        "\t\t * - Bit 15 must be 0, as we use it internally as a terminal",
+                        "\t\t *   direction flag.",
+                        "\t\t *",
+                        "\t\t * Other unknown types are accepted.",
+                        "\t\tif ((type & 0x7f00) == 0 || (type & 0x8000) != 0) {"
+                    ],
+                    "deleted": [
+                        "\t\t/* Make sure the terminal type MSB is not null, otherwise it",
+                        "\t\t * could be confused with a unit.",
+                        "\t\tif ((type & 0xff00) == 0) {"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "In uvc_parse_standard_control of uvc_driver.c, there is a possible out-of-bound read due to improper input validation. This could lead to local information disclosure with no additional execution privileges needed. User interaction is not needed for exploitation. Product: Android. Versions: Android kernel. Android ID: A-111760968.",
+                "id": 2290
+            }
+        ]
+    },
+    "CVE-2019-19927": {
+        "item": [
+            {
+                "cve_id": "CVE-2019-19927",
+                "code_before_change": "static void ttm_put_pages(struct page **pages, unsigned npages, int flags,\n\t\t\t  enum ttm_caching_state cstate)\n{\n\tstruct ttm_page_pool *pool = ttm_get_pool(flags, false, cstate);\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\tstruct ttm_page_pool *huge = ttm_get_pool(flags, true, cstate);\n#endif\n\tunsigned long irq_flags;\n\tunsigned i;\n\n\tif (pool == NULL) {\n\t\t/* No pool for this memory type so free the pages */\n\t\ti = 0;\n\t\twhile (i < npages) {\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\t\t\tstruct page *p = pages[i];\n#endif\n\t\t\tunsigned order = 0, j;\n\n\t\t\tif (!pages[i]) {\n\t\t\t\t++i;\n\t\t\t\tcontinue;\n\t\t\t}\n\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\t\t\tif (!(flags & TTM_PAGE_FLAG_DMA32) &&\n\t\t\t    (npages - i) >= HPAGE_PMD_NR) {\n\t\t\t\tfor (j = 1; j < HPAGE_PMD_NR; ++j)\n\t\t\t\t\tif (p++ != pages[i + j])\n\t\t\t\t\t    break;\n\n\t\t\t\tif (j == HPAGE_PMD_NR)\n\t\t\t\t\torder = HPAGE_PMD_ORDER;\n\t\t\t}\n#endif\n\n\t\t\tif (page_count(pages[i]) != 1)\n\t\t\t\tpr_err(\"Erroneous page count. Leaking pages.\\n\");\n\t\t\t__free_pages(pages[i], order);\n\n\t\t\tj = 1 << order;\n\t\t\twhile (j) {\n\t\t\t\tpages[i++] = NULL;\n\t\t\t\t--j;\n\t\t\t}\n\t\t}\n\t\treturn;\n\t}\n\n\ti = 0;\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\tif (huge) {\n\t\tunsigned max_size, n2free;\n\n\t\tspin_lock_irqsave(&huge->lock, irq_flags);\n\t\twhile ((npages - i) >= HPAGE_PMD_NR) {\n\t\t\tstruct page *p = pages[i];\n\t\t\tunsigned j;\n\n\t\t\tif (!p)\n\t\t\t\tbreak;\n\n\t\t\tfor (j = 1; j < HPAGE_PMD_NR; ++j)\n\t\t\t\tif (p++ != pages[i + j])\n\t\t\t\t    break;\n\n\t\t\tif (j != HPAGE_PMD_NR)\n\t\t\t\tbreak;\n\n\t\t\tlist_add_tail(&pages[i]->lru, &huge->list);\n\n\t\t\tfor (j = 0; j < HPAGE_PMD_NR; ++j)\n\t\t\t\tpages[i++] = NULL;\n\t\t\thuge->npages++;\n\t\t}\n\n\t\t/* Check that we don't go over the pool limit */\n\t\tmax_size = _manager->options.max_size;\n\t\tmax_size /= HPAGE_PMD_NR;\n\t\tif (huge->npages > max_size)\n\t\t\tn2free = huge->npages - max_size;\n\t\telse\n\t\t\tn2free = 0;\n\t\tspin_unlock_irqrestore(&huge->lock, irq_flags);\n\t\tif (n2free)\n\t\t\tttm_page_pool_free(huge, n2free, false);\n\t}\n#endif\n\n\tspin_lock_irqsave(&pool->lock, irq_flags);\n\twhile (i < npages) {\n\t\tif (pages[i]) {\n\t\t\tif (page_count(pages[i]) != 1)\n\t\t\t\tpr_err(\"Erroneous page count. Leaking pages.\\n\");\n\t\t\tlist_add_tail(&pages[i]->lru, &pool->list);\n\t\t\tpages[i] = NULL;\n\t\t\tpool->npages++;\n\t\t}\n\t\t++i;\n\t}\n\t/* Check that we don't go over the pool limit */\n\tnpages = 0;\n\tif (pool->npages > _manager->options.max_size) {\n\t\tnpages = pool->npages - _manager->options.max_size;\n\t\t/* free at least NUM_PAGES_TO_ALLOC number of pages\n\t\t * to reduce calls to set_memory_wb */\n\t\tif (npages < NUM_PAGES_TO_ALLOC)\n\t\t\tnpages = NUM_PAGES_TO_ALLOC;\n\t}\n\tspin_unlock_irqrestore(&pool->lock, irq_flags);\n\tif (npages)\n\t\tttm_page_pool_free(pool, npages, false);\n}",
+                "code_after_change": "static void ttm_put_pages(struct page **pages, unsigned npages, int flags,\n\t\t\t  enum ttm_caching_state cstate)\n{\n\tstruct ttm_page_pool *pool = ttm_get_pool(flags, false, cstate);\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\tstruct ttm_page_pool *huge = ttm_get_pool(flags, true, cstate);\n#endif\n\tunsigned long irq_flags;\n\tunsigned i;\n\n\tif (pool == NULL) {\n\t\t/* No pool for this memory type so free the pages */\n\t\ti = 0;\n\t\twhile (i < npages) {\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\t\t\tstruct page *p = pages[i];\n#endif\n\t\t\tunsigned order = 0, j;\n\n\t\t\tif (!pages[i]) {\n\t\t\t\t++i;\n\t\t\t\tcontinue;\n\t\t\t}\n\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\t\t\tif (!(flags & TTM_PAGE_FLAG_DMA32) &&\n\t\t\t    (npages - i) >= HPAGE_PMD_NR) {\n\t\t\t\tfor (j = 1; j < HPAGE_PMD_NR; ++j)\n\t\t\t\t\tif (++p != pages[i + j])\n\t\t\t\t\t    break;\n\n\t\t\t\tif (j == HPAGE_PMD_NR)\n\t\t\t\t\torder = HPAGE_PMD_ORDER;\n\t\t\t}\n#endif\n\n\t\t\tif (page_count(pages[i]) != 1)\n\t\t\t\tpr_err(\"Erroneous page count. Leaking pages.\\n\");\n\t\t\t__free_pages(pages[i], order);\n\n\t\t\tj = 1 << order;\n\t\t\twhile (j) {\n\t\t\t\tpages[i++] = NULL;\n\t\t\t\t--j;\n\t\t\t}\n\t\t}\n\t\treturn;\n\t}\n\n\ti = 0;\n#ifdef CONFIG_TRANSPARENT_HUGEPAGE\n\tif (huge) {\n\t\tunsigned max_size, n2free;\n\n\t\tspin_lock_irqsave(&huge->lock, irq_flags);\n\t\twhile ((npages - i) >= HPAGE_PMD_NR) {\n\t\t\tstruct page *p = pages[i];\n\t\t\tunsigned j;\n\n\t\t\tif (!p)\n\t\t\t\tbreak;\n\n\t\t\tfor (j = 1; j < HPAGE_PMD_NR; ++j)\n\t\t\t\tif (++p != pages[i + j])\n\t\t\t\t    break;\n\n\t\t\tif (j != HPAGE_PMD_NR)\n\t\t\t\tbreak;\n\n\t\t\tlist_add_tail(&pages[i]->lru, &huge->list);\n\n\t\t\tfor (j = 0; j < HPAGE_PMD_NR; ++j)\n\t\t\t\tpages[i++] = NULL;\n\t\t\thuge->npages++;\n\t\t}\n\n\t\t/* Check that we don't go over the pool limit */\n\t\tmax_size = _manager->options.max_size;\n\t\tmax_size /= HPAGE_PMD_NR;\n\t\tif (huge->npages > max_size)\n\t\t\tn2free = huge->npages - max_size;\n\t\telse\n\t\t\tn2free = 0;\n\t\tspin_unlock_irqrestore(&huge->lock, irq_flags);\n\t\tif (n2free)\n\t\t\tttm_page_pool_free(huge, n2free, false);\n\t}\n#endif\n\n\tspin_lock_irqsave(&pool->lock, irq_flags);\n\twhile (i < npages) {\n\t\tif (pages[i]) {\n\t\t\tif (page_count(pages[i]) != 1)\n\t\t\t\tpr_err(\"Erroneous page count. Leaking pages.\\n\");\n\t\t\tlist_add_tail(&pages[i]->lru, &pool->list);\n\t\t\tpages[i] = NULL;\n\t\t\tpool->npages++;\n\t\t}\n\t\t++i;\n\t}\n\t/* Check that we don't go over the pool limit */\n\tnpages = 0;\n\tif (pool->npages > _manager->options.max_size) {\n\t\tnpages = pool->npages - _manager->options.max_size;\n\t\t/* free at least NUM_PAGES_TO_ALLOC number of pages\n\t\t * to reduce calls to set_memory_wb */\n\t\tif (npages < NUM_PAGES_TO_ALLOC)\n\t\t\tnpages = NUM_PAGES_TO_ALLOC;\n\t}\n\tspin_unlock_irqrestore(&pool->lock, irq_flags);\n\tif (npages)\n\t\tttm_page_pool_free(pool, npages, false);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -26,7 +26,7 @@\n \t\t\tif (!(flags & TTM_PAGE_FLAG_DMA32) &&\n \t\t\t    (npages - i) >= HPAGE_PMD_NR) {\n \t\t\t\tfor (j = 1; j < HPAGE_PMD_NR; ++j)\n-\t\t\t\t\tif (p++ != pages[i + j])\n+\t\t\t\t\tif (++p != pages[i + j])\n \t\t\t\t\t    break;\n \n \t\t\t\tif (j == HPAGE_PMD_NR)\n@@ -61,7 +61,7 @@\n \t\t\t\tbreak;\n \n \t\t\tfor (j = 1; j < HPAGE_PMD_NR; ++j)\n-\t\t\t\tif (p++ != pages[i + j])\n+\t\t\t\tif (++p != pages[i + j])\n \t\t\t\t    break;\n \n \t\t\tif (j != HPAGE_PMD_NR)",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\t\t\t\tif (++p != pages[i + j])",
+                        "\t\t\t\tif (++p != pages[i + j])"
+                    ],
+                    "deleted": [
+                        "\t\t\t\t\tif (p++ != pages[i + j])",
+                        "\t\t\t\tif (p++ != pages[i + j])"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "In the Linux kernel 5.0.0-rc7 (as distributed in ubuntu/linux.git on kernel.ubuntu.com), mounting a crafted f2fs filesystem image and performing some operations can lead to slab-out-of-bounds read access in ttm_put_pages in drivers/gpu/drm/ttm/ttm_page_alloc.c. This is related to the vmwgfx or ttm module.",
+                "id": 2265
+            }
+        ]
+    },
+    "CVE-2020-0427": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-0427",
+                "code_before_change": "static void dt_free_map(struct pinctrl_dev *pctldev,\n\t\t     struct pinctrl_map *map, unsigned num_maps)\n{\n\tif (pctldev) {\n\t\tconst struct pinctrl_ops *ops = pctldev->desc->pctlops;\n\t\tif (ops->dt_free_map)\n\t\t\tops->dt_free_map(pctldev, map, num_maps);\n\t} else {\n\t\t/* There is no pctldev for PIN_MAP_TYPE_DUMMY_STATE */\n\t\tkfree(map);\n\t}\n}",
+                "code_after_change": "static void dt_free_map(struct pinctrl_dev *pctldev,\n\t\t     struct pinctrl_map *map, unsigned num_maps)\n{\n\tint i;\n\n\tfor (i = 0; i < num_maps; ++i) {\n\t\tkfree_const(map[i].dev_name);\n\t\tmap[i].dev_name = NULL;\n\t}\n\n\tif (pctldev) {\n\t\tconst struct pinctrl_ops *ops = pctldev->desc->pctlops;\n\t\tif (ops->dt_free_map)\n\t\t\tops->dt_free_map(pctldev, map, num_maps);\n\t} else {\n\t\t/* There is no pctldev for PIN_MAP_TYPE_DUMMY_STATE */\n\t\tkfree(map);\n\t}\n}",
+                "patch": "--- code before\n+++ code after\n@@ -1,6 +1,13 @@\n static void dt_free_map(struct pinctrl_dev *pctldev,\n \t\t     struct pinctrl_map *map, unsigned num_maps)\n {\n+\tint i;\n+\n+\tfor (i = 0; i < num_maps; ++i) {\n+\t\tkfree_const(map[i].dev_name);\n+\t\tmap[i].dev_name = NULL;\n+\t}\n+\n \tif (pctldev) {\n \t\tconst struct pinctrl_ops *ops = pctldev->desc->pctlops;\n \t\tif (ops->dt_free_map)",
+                "function_modified_lines": {
+                    "added": [
+                        "\tint i;",
+                        "",
+                        "\tfor (i = 0; i < num_maps; ++i) {",
+                        "\t\tkfree_const(map[i].dev_name);",
+                        "\t\tmap[i].dev_name = NULL;",
+                        "\t}",
+                        ""
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125",
+                    "CWE-416"
+                ],
+                "cve_description": "In create_pinctrl of core.c, there is a possible out of bounds read due to a use after free. This could lead to local information disclosure with no additional execution privileges needed. User interaction is not needed for exploitation.Product: AndroidVersions: Android kernelAndroid ID: A-140550171",
+                "id": 2379
+            },
+            {
+                "cve_id": "CVE-2020-0427",
+                "code_before_change": "static int dt_remember_or_free_map(struct pinctrl *p, const char *statename,\n\t\t\t\t   struct pinctrl_dev *pctldev,\n\t\t\t\t   struct pinctrl_map *map, unsigned num_maps)\n{\n\tint i;\n\tstruct pinctrl_dt_map *dt_map;\n\n\t/* Initialize common mapping table entry fields */\n\tfor (i = 0; i < num_maps; i++) {\n\t\tmap[i].dev_name = dev_name(p->dev);\n\t\tmap[i].name = statename;\n\t\tif (pctldev)\n\t\t\tmap[i].ctrl_dev_name = dev_name(pctldev->dev);\n\t}\n\n\t/* Remember the converted mapping table entries */\n\tdt_map = kzalloc(sizeof(*dt_map), GFP_KERNEL);\n\tif (!dt_map) {\n\t\tdt_free_map(pctldev, map, num_maps);\n\t\treturn -ENOMEM;\n\t}\n\n\tdt_map->pctldev = pctldev;\n\tdt_map->map = map;\n\tdt_map->num_maps = num_maps;\n\tlist_add_tail(&dt_map->node, &p->dt_maps);\n\n\treturn pinctrl_register_map(map, num_maps, false);\n}",
+                "code_after_change": "static int dt_remember_or_free_map(struct pinctrl *p, const char *statename,\n\t\t\t\t   struct pinctrl_dev *pctldev,\n\t\t\t\t   struct pinctrl_map *map, unsigned num_maps)\n{\n\tint i;\n\tstruct pinctrl_dt_map *dt_map;\n\n\t/* Initialize common mapping table entry fields */\n\tfor (i = 0; i < num_maps; i++) {\n\t\tconst char *devname;\n\n\t\tdevname = kstrdup_const(dev_name(p->dev), GFP_KERNEL);\n\t\tif (!devname)\n\t\t\tgoto err_free_map;\n\n\t\tmap[i].dev_name = devname;\n\t\tmap[i].name = statename;\n\t\tif (pctldev)\n\t\t\tmap[i].ctrl_dev_name = dev_name(pctldev->dev);\n\t}\n\n\t/* Remember the converted mapping table entries */\n\tdt_map = kzalloc(sizeof(*dt_map), GFP_KERNEL);\n\tif (!dt_map)\n\t\tgoto err_free_map;\n\n\tdt_map->pctldev = pctldev;\n\tdt_map->map = map;\n\tdt_map->num_maps = num_maps;\n\tlist_add_tail(&dt_map->node, &p->dt_maps);\n\n\treturn pinctrl_register_map(map, num_maps, false);\n\nerr_free_map:\n\tdt_free_map(pctldev, map, num_maps);\n\treturn -ENOMEM;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -7,7 +7,13 @@\n \n \t/* Initialize common mapping table entry fields */\n \tfor (i = 0; i < num_maps; i++) {\n-\t\tmap[i].dev_name = dev_name(p->dev);\n+\t\tconst char *devname;\n+\n+\t\tdevname = kstrdup_const(dev_name(p->dev), GFP_KERNEL);\n+\t\tif (!devname)\n+\t\t\tgoto err_free_map;\n+\n+\t\tmap[i].dev_name = devname;\n \t\tmap[i].name = statename;\n \t\tif (pctldev)\n \t\t\tmap[i].ctrl_dev_name = dev_name(pctldev->dev);\n@@ -15,10 +21,8 @@\n \n \t/* Remember the converted mapping table entries */\n \tdt_map = kzalloc(sizeof(*dt_map), GFP_KERNEL);\n-\tif (!dt_map) {\n-\t\tdt_free_map(pctldev, map, num_maps);\n-\t\treturn -ENOMEM;\n-\t}\n+\tif (!dt_map)\n+\t\tgoto err_free_map;\n \n \tdt_map->pctldev = pctldev;\n \tdt_map->map = map;\n@@ -26,4 +30,8 @@\n \tlist_add_tail(&dt_map->node, &p->dt_maps);\n \n \treturn pinctrl_register_map(map, num_maps, false);\n+\n+err_free_map:\n+\tdt_free_map(pctldev, map, num_maps);\n+\treturn -ENOMEM;\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\tconst char *devname;",
+                        "",
+                        "\t\tdevname = kstrdup_const(dev_name(p->dev), GFP_KERNEL);",
+                        "\t\tif (!devname)",
+                        "\t\t\tgoto err_free_map;",
+                        "",
+                        "\t\tmap[i].dev_name = devname;",
+                        "\tif (!dt_map)",
+                        "\t\tgoto err_free_map;",
+                        "",
+                        "err_free_map:",
+                        "\tdt_free_map(pctldev, map, num_maps);",
+                        "\treturn -ENOMEM;"
+                    ],
+                    "deleted": [
+                        "\t\tmap[i].dev_name = dev_name(p->dev);",
+                        "\tif (!dt_map) {",
+                        "\t\tdt_free_map(pctldev, map, num_maps);",
+                        "\t\treturn -ENOMEM;",
+                        "\t}"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125",
+                    "CWE-416"
+                ],
+                "cve_description": "In create_pinctrl of core.c, there is a possible out of bounds read due to a use after free. This could lead to local information disclosure with no additional execution privileges needed. User interaction is not needed for exploitation.Product: AndroidVersions: Android kernelAndroid ID: A-140550171",
+                "id": 2380
+            }
+        ]
+    },
+    "CVE-2021-3506": {
+        "item": [
+            {
+                "cve_id": "CVE-2021-3506",
+                "code_before_change": "static void remove_nats_in_journal(struct f2fs_sb_info *sbi)\n{\n\tstruct f2fs_nm_info *nm_i = NM_I(sbi);\n\tstruct curseg_info *curseg = CURSEG_I(sbi, CURSEG_HOT_DATA);\n\tstruct f2fs_journal *journal = curseg->journal;\n\tint i;\n\n\tdown_write(&curseg->journal_rwsem);\n\tfor (i = 0; i < nats_in_cursum(journal); i++) {\n\t\tstruct nat_entry *ne;\n\t\tstruct f2fs_nat_entry raw_ne;\n\t\tnid_t nid = le32_to_cpu(nid_in_journal(journal, i));\n\n\t\traw_ne = nat_in_journal(journal, i);\n\n\t\tne = __lookup_nat_cache(nm_i, nid);\n\t\tif (!ne) {\n\t\t\tne = __alloc_nat_entry(nid, true);\n\t\t\t__init_nat_entry(nm_i, ne, &raw_ne, true);\n\t\t}\n\n\t\t/*\n\t\t * if a free nat in journal has not been used after last\n\t\t * checkpoint, we should remove it from available nids,\n\t\t * since later we will add it again.\n\t\t */\n\t\tif (!get_nat_flag(ne, IS_DIRTY) &&\n\t\t\t\tle32_to_cpu(raw_ne.block_addr) == NULL_ADDR) {\n\t\t\tspin_lock(&nm_i->nid_list_lock);\n\t\t\tnm_i->available_nids--;\n\t\t\tspin_unlock(&nm_i->nid_list_lock);\n\t\t}\n\n\t\t__set_nat_cache_dirty(nm_i, ne);\n\t}\n\tupdate_nats_in_cursum(journal, -i);\n\tup_write(&curseg->journal_rwsem);\n}",
+                "code_after_change": "static void remove_nats_in_journal(struct f2fs_sb_info *sbi)\n{\n\tstruct f2fs_nm_info *nm_i = NM_I(sbi);\n\tstruct curseg_info *curseg = CURSEG_I(sbi, CURSEG_HOT_DATA);\n\tstruct f2fs_journal *journal = curseg->journal;\n\tint i;\n\n\tdown_write(&curseg->journal_rwsem);\n\tfor (i = 0; i < nats_in_cursum(journal); i++) {\n\t\tstruct nat_entry *ne;\n\t\tstruct f2fs_nat_entry raw_ne;\n\t\tnid_t nid = le32_to_cpu(nid_in_journal(journal, i));\n\n\t\tif (f2fs_check_nid_range(sbi, nid))\n\t\t\tcontinue;\n\n\t\traw_ne = nat_in_journal(journal, i);\n\n\t\tne = __lookup_nat_cache(nm_i, nid);\n\t\tif (!ne) {\n\t\t\tne = __alloc_nat_entry(nid, true);\n\t\t\t__init_nat_entry(nm_i, ne, &raw_ne, true);\n\t\t}\n\n\t\t/*\n\t\t * if a free nat in journal has not been used after last\n\t\t * checkpoint, we should remove it from available nids,\n\t\t * since later we will add it again.\n\t\t */\n\t\tif (!get_nat_flag(ne, IS_DIRTY) &&\n\t\t\t\tle32_to_cpu(raw_ne.block_addr) == NULL_ADDR) {\n\t\t\tspin_lock(&nm_i->nid_list_lock);\n\t\t\tnm_i->available_nids--;\n\t\t\tspin_unlock(&nm_i->nid_list_lock);\n\t\t}\n\n\t\t__set_nat_cache_dirty(nm_i, ne);\n\t}\n\tupdate_nats_in_cursum(journal, -i);\n\tup_write(&curseg->journal_rwsem);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -10,6 +10,9 @@\n \t\tstruct nat_entry *ne;\n \t\tstruct f2fs_nat_entry raw_ne;\n \t\tnid_t nid = le32_to_cpu(nid_in_journal(journal, i));\n+\n+\t\tif (f2fs_check_nid_range(sbi, nid))\n+\t\t\tcontinue;\n \n \t\traw_ne = nat_in_journal(journal, i);\n ",
+                "function_modified_lines": {
+                    "added": [
+                        "",
+                        "\t\tif (f2fs_check_nid_range(sbi, nid))",
+                        "\t\t\tcontinue;"
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An out-of-bounds (OOB) memory access flaw was found in fs/f2fs/node.c in the f2fs module in the Linux kernel in versions before 5.12.0-rc4. A bounds check failure allows a local attacker to gain access to out-of-bounds memory leading to a system crash or a leak of internal kernel information. The highest threat from this vulnerability is to system availability.",
+                "id": 3016
+            }
+        ]
+    },
+    "CVE-2017-16912": {
+        "item": [
+            {
+                "cve_id": "CVE-2017-16912",
+                "code_before_change": "static int get_pipe(struct stub_device *sdev, int epnum, int dir)\n{\n\tstruct usb_device *udev = sdev->udev;\n\tstruct usb_host_endpoint *ep;\n\tstruct usb_endpoint_descriptor *epd = NULL;\n\n\tif (dir == USBIP_DIR_IN)\n\t\tep = udev->ep_in[epnum & 0x7f];\n\telse\n\t\tep = udev->ep_out[epnum & 0x7f];\n\tif (!ep) {\n\t\tdev_err(&sdev->udev->dev, \"no such endpoint?, %d\\n\",\n\t\t\tepnum);\n\t\tBUG();\n\t}\n\n\tepd = &ep->desc;\n\tif (usb_endpoint_xfer_control(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndctrlpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvctrlpipe(udev, epnum);\n\t}\n\n\tif (usb_endpoint_xfer_bulk(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndbulkpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvbulkpipe(udev, epnum);\n\t}\n\n\tif (usb_endpoint_xfer_int(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndintpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvintpipe(udev, epnum);\n\t}\n\n\tif (usb_endpoint_xfer_isoc(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndisocpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvisocpipe(udev, epnum);\n\t}\n\n\t/* NOT REACHED */\n\tdev_err(&sdev->udev->dev, \"get pipe, epnum %d\\n\", epnum);\n\treturn 0;\n}",
+                "code_after_change": "static int get_pipe(struct stub_device *sdev, int epnum, int dir)\n{\n\tstruct usb_device *udev = sdev->udev;\n\tstruct usb_host_endpoint *ep;\n\tstruct usb_endpoint_descriptor *epd = NULL;\n\n\tif (epnum < 0 || epnum > 15)\n\t\tgoto err_ret;\n\n\tif (dir == USBIP_DIR_IN)\n\t\tep = udev->ep_in[epnum & 0x7f];\n\telse\n\t\tep = udev->ep_out[epnum & 0x7f];\n\tif (!ep)\n\t\tgoto err_ret;\n\n\tepd = &ep->desc;\n\tif (usb_endpoint_xfer_control(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndctrlpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvctrlpipe(udev, epnum);\n\t}\n\n\tif (usb_endpoint_xfer_bulk(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndbulkpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvbulkpipe(udev, epnum);\n\t}\n\n\tif (usb_endpoint_xfer_int(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndintpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvintpipe(udev, epnum);\n\t}\n\n\tif (usb_endpoint_xfer_isoc(epd)) {\n\t\tif (dir == USBIP_DIR_OUT)\n\t\t\treturn usb_sndisocpipe(udev, epnum);\n\t\telse\n\t\t\treturn usb_rcvisocpipe(udev, epnum);\n\t}\n\nerr_ret:\n\t/* NOT REACHED */\n\tdev_err(&sdev->udev->dev, \"get pipe() invalid epnum %d\\n\", epnum);\n\treturn -1;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -4,15 +4,15 @@\n \tstruct usb_host_endpoint *ep;\n \tstruct usb_endpoint_descriptor *epd = NULL;\n \n+\tif (epnum < 0 || epnum > 15)\n+\t\tgoto err_ret;\n+\n \tif (dir == USBIP_DIR_IN)\n \t\tep = udev->ep_in[epnum & 0x7f];\n \telse\n \t\tep = udev->ep_out[epnum & 0x7f];\n-\tif (!ep) {\n-\t\tdev_err(&sdev->udev->dev, \"no such endpoint?, %d\\n\",\n-\t\t\tepnum);\n-\t\tBUG();\n-\t}\n+\tif (!ep)\n+\t\tgoto err_ret;\n \n \tepd = &ep->desc;\n \tif (usb_endpoint_xfer_control(epd)) {\n@@ -43,7 +43,8 @@\n \t\t\treturn usb_rcvisocpipe(udev, epnum);\n \t}\n \n+err_ret:\n \t/* NOT REACHED */\n-\tdev_err(&sdev->udev->dev, \"get pipe, epnum %d\\n\", epnum);\n-\treturn 0;\n+\tdev_err(&sdev->udev->dev, \"get pipe() invalid epnum %d\\n\", epnum);\n+\treturn -1;\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (epnum < 0 || epnum > 15)",
+                        "\t\tgoto err_ret;",
+                        "",
+                        "\tif (!ep)",
+                        "\t\tgoto err_ret;",
+                        "err_ret:",
+                        "\tdev_err(&sdev->udev->dev, \"get pipe() invalid epnum %d\\n\", epnum);",
+                        "\treturn -1;"
+                    ],
+                    "deleted": [
+                        "\tif (!ep) {",
+                        "\t\tdev_err(&sdev->udev->dev, \"no such endpoint?, %d\\n\",",
+                        "\t\t\tepnum);",
+                        "\t\tBUG();",
+                        "\t}",
+                        "\tdev_err(&sdev->udev->dev, \"get pipe, epnum %d\\n\", epnum);",
+                        "\treturn 0;"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "The \"get_pipe()\" function (drivers/usb/usbip/stub_rx.c) in the Linux Kernel before version 4.14.8, 4.9.71, and 4.4.114 allows attackers to cause a denial of service (out-of-bounds read) via a specially crafted USB over IP packet.",
+                "id": 1349
+            }
+        ]
+    },
+    "CVE-2020-36386": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-36386",
+                "code_before_change": "static void hci_extended_inquiry_result_evt(struct hci_dev *hdev,\n\t\t\t\t\t    struct sk_buff *skb)\n{\n\tstruct inquiry_data data;\n\tstruct extended_inquiry_info *info = (void *) (skb->data + 1);\n\tint num_rsp = *((__u8 *) skb->data);\n\tsize_t eir_len;\n\n\tBT_DBG(\"%s num_rsp %d\", hdev->name, num_rsp);\n\n\tif (!num_rsp)\n\t\treturn;\n\n\tif (hci_dev_test_flag(hdev, HCI_PERIODIC_INQ))\n\t\treturn;\n\n\thci_dev_lock(hdev);\n\n\tfor (; num_rsp; num_rsp--, info++) {\n\t\tu32 flags;\n\t\tbool name_known;\n\n\t\tbacpy(&data.bdaddr, &info->bdaddr);\n\t\tdata.pscan_rep_mode\t= info->pscan_rep_mode;\n\t\tdata.pscan_period_mode\t= info->pscan_period_mode;\n\t\tdata.pscan_mode\t\t= 0x00;\n\t\tmemcpy(data.dev_class, info->dev_class, 3);\n\t\tdata.clock_offset\t= info->clock_offset;\n\t\tdata.rssi\t\t= info->rssi;\n\t\tdata.ssp_mode\t\t= 0x01;\n\n\t\tif (hci_dev_test_flag(hdev, HCI_MGMT))\n\t\t\tname_known = eir_get_data(info->data,\n\t\t\t\t\t\t  sizeof(info->data),\n\t\t\t\t\t\t  EIR_NAME_COMPLETE, NULL);\n\t\telse\n\t\t\tname_known = true;\n\n\t\tflags = hci_inquiry_cache_update(hdev, &data, name_known);\n\n\t\teir_len = eir_get_length(info->data, sizeof(info->data));\n\n\t\tmgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,\n\t\t\t\t  info->dev_class, info->rssi,\n\t\t\t\t  flags, info->data, eir_len, NULL, 0);\n\t}\n\n\thci_dev_unlock(hdev);\n}",
+                "code_after_change": "static void hci_extended_inquiry_result_evt(struct hci_dev *hdev,\n\t\t\t\t\t    struct sk_buff *skb)\n{\n\tstruct inquiry_data data;\n\tstruct extended_inquiry_info *info = (void *) (skb->data + 1);\n\tint num_rsp = *((__u8 *) skb->data);\n\tsize_t eir_len;\n\n\tBT_DBG(\"%s num_rsp %d\", hdev->name, num_rsp);\n\n\tif (!num_rsp || skb->len < num_rsp * sizeof(*info) + 1)\n\t\treturn;\n\n\tif (hci_dev_test_flag(hdev, HCI_PERIODIC_INQ))\n\t\treturn;\n\n\thci_dev_lock(hdev);\n\n\tfor (; num_rsp; num_rsp--, info++) {\n\t\tu32 flags;\n\t\tbool name_known;\n\n\t\tbacpy(&data.bdaddr, &info->bdaddr);\n\t\tdata.pscan_rep_mode\t= info->pscan_rep_mode;\n\t\tdata.pscan_period_mode\t= info->pscan_period_mode;\n\t\tdata.pscan_mode\t\t= 0x00;\n\t\tmemcpy(data.dev_class, info->dev_class, 3);\n\t\tdata.clock_offset\t= info->clock_offset;\n\t\tdata.rssi\t\t= info->rssi;\n\t\tdata.ssp_mode\t\t= 0x01;\n\n\t\tif (hci_dev_test_flag(hdev, HCI_MGMT))\n\t\t\tname_known = eir_get_data(info->data,\n\t\t\t\t\t\t  sizeof(info->data),\n\t\t\t\t\t\t  EIR_NAME_COMPLETE, NULL);\n\t\telse\n\t\t\tname_known = true;\n\n\t\tflags = hci_inquiry_cache_update(hdev, &data, name_known);\n\n\t\teir_len = eir_get_length(info->data, sizeof(info->data));\n\n\t\tmgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,\n\t\t\t\t  info->dev_class, info->rssi,\n\t\t\t\t  flags, info->data, eir_len, NULL, 0);\n\t}\n\n\thci_dev_unlock(hdev);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -8,7 +8,7 @@\n \n \tBT_DBG(\"%s num_rsp %d\", hdev->name, num_rsp);\n \n-\tif (!num_rsp)\n+\tif (!num_rsp || skb->len < num_rsp * sizeof(*info) + 1)\n \t\treturn;\n \n \tif (hci_dev_test_flag(hdev, HCI_PERIODIC_INQ))",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (!num_rsp || skb->len < num_rsp * sizeof(*info) + 1)"
+                    ],
+                    "deleted": [
+                        "\tif (!num_rsp)"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 5.8.1. net/bluetooth/hci_event.c has a slab out-of-bounds read in hci_extended_inquiry_result_evt, aka CID-51c19bf3d5cf.",
+                "id": 2753
+            }
+        ]
+    },
+    "CVE-2020-10769": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-10769",
+                "code_before_change": "int crypto_authenc_extractkeys(struct crypto_authenc_keys *keys, const u8 *key,\n\t\t\t       unsigned int keylen)\n{\n\tstruct rtattr *rta = (struct rtattr *)key;\n\tstruct crypto_authenc_key_param *param;\n\n\tif (!RTA_OK(rta, keylen))\n\t\treturn -EINVAL;\n\tif (rta->rta_type != CRYPTO_AUTHENC_KEYA_PARAM)\n\t\treturn -EINVAL;\n\tif (RTA_PAYLOAD(rta) < sizeof(*param))\n\t\treturn -EINVAL;\n\n\tparam = RTA_DATA(rta);\n\tkeys->enckeylen = be32_to_cpu(param->enckeylen);\n\n\tkey += RTA_ALIGN(rta->rta_len);\n\tkeylen -= RTA_ALIGN(rta->rta_len);\n\n\tif (keylen < keys->enckeylen)\n\t\treturn -EINVAL;\n\n\tkeys->authkeylen = keylen - keys->enckeylen;\n\tkeys->authkey = key;\n\tkeys->enckey = key + keys->authkeylen;\n\n\treturn 0;\n}",
+                "code_after_change": "int crypto_authenc_extractkeys(struct crypto_authenc_keys *keys, const u8 *key,\n\t\t\t       unsigned int keylen)\n{\n\tstruct rtattr *rta = (struct rtattr *)key;\n\tstruct crypto_authenc_key_param *param;\n\n\tif (!RTA_OK(rta, keylen))\n\t\treturn -EINVAL;\n\tif (rta->rta_type != CRYPTO_AUTHENC_KEYA_PARAM)\n\t\treturn -EINVAL;\n\n\t/*\n\t * RTA_OK() didn't align the rtattr's payload when validating that it\n\t * fits in the buffer.  Yet, the keys should start on the next 4-byte\n\t * aligned boundary.  To avoid confusion, require that the rtattr\n\t * payload be exactly the param struct, which has a 4-byte aligned size.\n\t */\n\tif (RTA_PAYLOAD(rta) != sizeof(*param))\n\t\treturn -EINVAL;\n\tBUILD_BUG_ON(sizeof(*param) % RTA_ALIGNTO);\n\n\tparam = RTA_DATA(rta);\n\tkeys->enckeylen = be32_to_cpu(param->enckeylen);\n\n\tkey += rta->rta_len;\n\tkeylen -= rta->rta_len;\n\n\tif (keylen < keys->enckeylen)\n\t\treturn -EINVAL;\n\n\tkeys->authkeylen = keylen - keys->enckeylen;\n\tkeys->authkey = key;\n\tkeys->enckey = key + keys->authkeylen;\n\n\treturn 0;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -8,14 +8,22 @@\n \t\treturn -EINVAL;\n \tif (rta->rta_type != CRYPTO_AUTHENC_KEYA_PARAM)\n \t\treturn -EINVAL;\n-\tif (RTA_PAYLOAD(rta) < sizeof(*param))\n+\n+\t/*\n+\t * RTA_OK() didn't align the rtattr's payload when validating that it\n+\t * fits in the buffer.  Yet, the keys should start on the next 4-byte\n+\t * aligned boundary.  To avoid confusion, require that the rtattr\n+\t * payload be exactly the param struct, which has a 4-byte aligned size.\n+\t */\n+\tif (RTA_PAYLOAD(rta) != sizeof(*param))\n \t\treturn -EINVAL;\n+\tBUILD_BUG_ON(sizeof(*param) % RTA_ALIGNTO);\n \n \tparam = RTA_DATA(rta);\n \tkeys->enckeylen = be32_to_cpu(param->enckeylen);\n \n-\tkey += RTA_ALIGN(rta->rta_len);\n-\tkeylen -= RTA_ALIGN(rta->rta_len);\n+\tkey += rta->rta_len;\n+\tkeylen -= rta->rta_len;\n \n \tif (keylen < keys->enckeylen)\n \t\treturn -EINVAL;",
+                "function_modified_lines": {
+                    "added": [
+                        "",
+                        "\t/*",
+                        "\t * RTA_OK() didn't align the rtattr's payload when validating that it",
+                        "\t * fits in the buffer.  Yet, the keys should start on the next 4-byte",
+                        "\t * aligned boundary.  To avoid confusion, require that the rtattr",
+                        "\t * payload be exactly the param struct, which has a 4-byte aligned size.",
+                        "\t */",
+                        "\tif (RTA_PAYLOAD(rta) != sizeof(*param))",
+                        "\tBUILD_BUG_ON(sizeof(*param) % RTA_ALIGNTO);",
+                        "\tkey += rta->rta_len;",
+                        "\tkeylen -= rta->rta_len;"
+                    ],
+                    "deleted": [
+                        "\tif (RTA_PAYLOAD(rta) < sizeof(*param))",
+                        "\tkey += RTA_ALIGN(rta->rta_len);",
+                        "\tkeylen -= RTA_ALIGN(rta->rta_len);"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "A buffer over-read flaw was found in RH kernel versions before 5.0 in crypto_authenc_extractkeys in crypto/authenc.c in the IPsec Cryptographic algorithm's module, authenc. When a payload longer than 4 bytes, and is not following 4-byte alignment boundary guidelines, it causes a buffer over-read threat, leading to a system crash. This flaw allows a local attacker with user privileges to cause a denial of service.",
+                "id": 2422
+            }
+        ]
+    },
+    "CVE-2014-7825": {
+        "item": [
+            {
+                "cve_id": "CVE-2014-7825",
+                "code_before_change": "static void ftrace_syscall_exit(void *data, struct pt_regs *regs, long ret)\n{\n\tstruct trace_array *tr = data;\n\tstruct ftrace_event_file *ftrace_file;\n\tstruct syscall_trace_exit *entry;\n\tstruct syscall_metadata *sys_data;\n\tstruct ring_buffer_event *event;\n\tstruct ring_buffer *buffer;\n\tunsigned long irq_flags;\n\tint pc;\n\tint syscall_nr;\n\n\tsyscall_nr = trace_get_syscall_nr(current, regs);\n\tif (syscall_nr < 0)\n\t\treturn;\n\n\t/* Here we're inside tp handler's rcu_read_lock_sched (__DO_TRACE()) */\n\tftrace_file = rcu_dereference_sched(tr->exit_syscall_files[syscall_nr]);\n\tif (!ftrace_file)\n\t\treturn;\n\n\tif (ftrace_trigger_soft_disabled(ftrace_file))\n\t\treturn;\n\n\tsys_data = syscall_nr_to_meta(syscall_nr);\n\tif (!sys_data)\n\t\treturn;\n\n\tlocal_save_flags(irq_flags);\n\tpc = preempt_count();\n\n\tbuffer = tr->trace_buffer.buffer;\n\tevent = trace_buffer_lock_reserve(buffer,\n\t\t\tsys_data->exit_event->event.type, sizeof(*entry),\n\t\t\tirq_flags, pc);\n\tif (!event)\n\t\treturn;\n\n\tentry = ring_buffer_event_data(event);\n\tentry->nr = syscall_nr;\n\tentry->ret = syscall_get_return_value(current, regs);\n\n\tevent_trigger_unlock_commit(ftrace_file, buffer, event, entry,\n\t\t\t\t    irq_flags, pc);\n}",
+                "code_after_change": "static void ftrace_syscall_exit(void *data, struct pt_regs *regs, long ret)\n{\n\tstruct trace_array *tr = data;\n\tstruct ftrace_event_file *ftrace_file;\n\tstruct syscall_trace_exit *entry;\n\tstruct syscall_metadata *sys_data;\n\tstruct ring_buffer_event *event;\n\tstruct ring_buffer *buffer;\n\tunsigned long irq_flags;\n\tint pc;\n\tint syscall_nr;\n\n\tsyscall_nr = trace_get_syscall_nr(current, regs);\n\tif (syscall_nr < 0 || syscall_nr >= NR_syscalls)\n\t\treturn;\n\n\t/* Here we're inside tp handler's rcu_read_lock_sched (__DO_TRACE()) */\n\tftrace_file = rcu_dereference_sched(tr->exit_syscall_files[syscall_nr]);\n\tif (!ftrace_file)\n\t\treturn;\n\n\tif (ftrace_trigger_soft_disabled(ftrace_file))\n\t\treturn;\n\n\tsys_data = syscall_nr_to_meta(syscall_nr);\n\tif (!sys_data)\n\t\treturn;\n\n\tlocal_save_flags(irq_flags);\n\tpc = preempt_count();\n\n\tbuffer = tr->trace_buffer.buffer;\n\tevent = trace_buffer_lock_reserve(buffer,\n\t\t\tsys_data->exit_event->event.type, sizeof(*entry),\n\t\t\tirq_flags, pc);\n\tif (!event)\n\t\treturn;\n\n\tentry = ring_buffer_event_data(event);\n\tentry->nr = syscall_nr;\n\tentry->ret = syscall_get_return_value(current, regs);\n\n\tevent_trigger_unlock_commit(ftrace_file, buffer, event, entry,\n\t\t\t\t    irq_flags, pc);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -11,7 +11,7 @@\n \tint syscall_nr;\n \n \tsyscall_nr = trace_get_syscall_nr(current, regs);\n-\tif (syscall_nr < 0)\n+\tif (syscall_nr < 0 || syscall_nr >= NR_syscalls)\n \t\treturn;\n \n \t/* Here we're inside tp handler's rcu_read_lock_sched (__DO_TRACE()) */",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (syscall_nr < 0 || syscall_nr >= NR_syscalls)"
+                    ],
+                    "deleted": [
+                        "\tif (syscall_nr < 0)"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "kernel/trace/trace_syscalls.c in the Linux kernel through 3.17.2 does not properly handle private syscall numbers during use of the perf subsystem, which allows local users to cause a denial of service (out-of-bounds read and OOPS) or bypass the ASLR protection mechanism via a crafted application.",
+                "id": 589
+            }
+        ]
+    },
+    "CVE-2020-8835": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-8835",
+                "code_before_change": "static void reg_set_min_max_inv(struct bpf_reg_state *true_reg,\n\t\t\t\tstruct bpf_reg_state *false_reg, u64 val,\n\t\t\t\tu8 opcode, bool is_jmp32)\n{\n\ts64 sval;\n\n\tif (__is_pointer_value(false, false_reg))\n\t\treturn;\n\n\tval = is_jmp32 ? (u32)val : val;\n\tsval = is_jmp32 ? (s64)(s32)val : (s64)val;\n\n\tswitch (opcode) {\n\tcase BPF_JEQ:\n\tcase BPF_JNE:\n\t{\n\t\tstruct bpf_reg_state *reg =\n\t\t\topcode == BPF_JEQ ? true_reg : false_reg;\n\n\t\tif (is_jmp32) {\n\t\t\tu64 old_v = reg->var_off.value;\n\t\t\tu64 hi_mask = ~0xffffffffULL;\n\n\t\t\treg->var_off.value = (old_v & hi_mask) | val;\n\t\t\treg->var_off.mask &= hi_mask;\n\t\t} else {\n\t\t\t__mark_reg_known(reg, val);\n\t\t}\n\t\tbreak;\n\t}\n\tcase BPF_JSET:\n\t\tfalse_reg->var_off = tnum_and(false_reg->var_off,\n\t\t\t\t\t      tnum_const(~val));\n\t\tif (is_power_of_2(val))\n\t\t\ttrue_reg->var_off = tnum_or(true_reg->var_off,\n\t\t\t\t\t\t    tnum_const(val));\n\t\tbreak;\n\tcase BPF_JGE:\n\tcase BPF_JGT:\n\t{\n\t\tu64 false_umin = opcode == BPF_JGT ? val    : val + 1;\n\t\tu64 true_umax = opcode == BPF_JGT ? val - 1 : val;\n\n\t\tif (is_jmp32) {\n\t\t\tfalse_umin += gen_hi_min(false_reg->var_off);\n\t\t\ttrue_umax += gen_hi_max(true_reg->var_off);\n\t\t}\n\t\tfalse_reg->umin_value = max(false_reg->umin_value, false_umin);\n\t\ttrue_reg->umax_value = min(true_reg->umax_value, true_umax);\n\t\tbreak;\n\t}\n\tcase BPF_JSGE:\n\tcase BPF_JSGT:\n\t{\n\t\ts64 false_smin = opcode == BPF_JSGT ? sval    : sval + 1;\n\t\ts64 true_smax = opcode == BPF_JSGT ? sval - 1 : sval;\n\n\t\tif (is_jmp32 && !cmp_val_with_extended_s64(sval, false_reg))\n\t\t\tbreak;\n\t\tfalse_reg->smin_value = max(false_reg->smin_value, false_smin);\n\t\ttrue_reg->smax_value = min(true_reg->smax_value, true_smax);\n\t\tbreak;\n\t}\n\tcase BPF_JLE:\n\tcase BPF_JLT:\n\t{\n\t\tu64 false_umax = opcode == BPF_JLT ? val    : val - 1;\n\t\tu64 true_umin = opcode == BPF_JLT ? val + 1 : val;\n\n\t\tif (is_jmp32) {\n\t\t\tfalse_umax += gen_hi_max(false_reg->var_off);\n\t\t\ttrue_umin += gen_hi_min(true_reg->var_off);\n\t\t}\n\t\tfalse_reg->umax_value = min(false_reg->umax_value, false_umax);\n\t\ttrue_reg->umin_value = max(true_reg->umin_value, true_umin);\n\t\tbreak;\n\t}\n\tcase BPF_JSLE:\n\tcase BPF_JSLT:\n\t{\n\t\ts64 false_smax = opcode == BPF_JSLT ? sval    : sval - 1;\n\t\ts64 true_smin = opcode == BPF_JSLT ? sval + 1 : sval;\n\n\t\tif (is_jmp32 && !cmp_val_with_extended_s64(sval, false_reg))\n\t\t\tbreak;\n\t\tfalse_reg->smax_value = min(false_reg->smax_value, false_smax);\n\t\ttrue_reg->smin_value = max(true_reg->smin_value, true_smin);\n\t\tbreak;\n\t}\n\tdefault:\n\t\tbreak;\n\t}\n\n\t__reg_deduce_bounds(false_reg);\n\t__reg_deduce_bounds(true_reg);\n\t/* We might have learned some bits from the bounds. */\n\t__reg_bound_offset(false_reg);\n\t__reg_bound_offset(true_reg);\n\tif (is_jmp32) {\n\t\t__reg_bound_offset32(false_reg);\n\t\t__reg_bound_offset32(true_reg);\n\t}\n\t/* Intersecting with the old var_off might have improved our bounds\n\t * slightly.  e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),\n\t * then new var_off is (0; 0x7f...fc) which improves our umax.\n\t */\n\t__update_reg_bounds(false_reg);\n\t__update_reg_bounds(true_reg);\n}",
+                "code_after_change": "static void reg_set_min_max_inv(struct bpf_reg_state *true_reg,\n\t\t\t\tstruct bpf_reg_state *false_reg, u64 val,\n\t\t\t\tu8 opcode, bool is_jmp32)\n{\n\ts64 sval;\n\n\tif (__is_pointer_value(false, false_reg))\n\t\treturn;\n\n\tval = is_jmp32 ? (u32)val : val;\n\tsval = is_jmp32 ? (s64)(s32)val : (s64)val;\n\n\tswitch (opcode) {\n\tcase BPF_JEQ:\n\tcase BPF_JNE:\n\t{\n\t\tstruct bpf_reg_state *reg =\n\t\t\topcode == BPF_JEQ ? true_reg : false_reg;\n\n\t\tif (is_jmp32) {\n\t\t\tu64 old_v = reg->var_off.value;\n\t\t\tu64 hi_mask = ~0xffffffffULL;\n\n\t\t\treg->var_off.value = (old_v & hi_mask) | val;\n\t\t\treg->var_off.mask &= hi_mask;\n\t\t} else {\n\t\t\t__mark_reg_known(reg, val);\n\t\t}\n\t\tbreak;\n\t}\n\tcase BPF_JSET:\n\t\tfalse_reg->var_off = tnum_and(false_reg->var_off,\n\t\t\t\t\t      tnum_const(~val));\n\t\tif (is_power_of_2(val))\n\t\t\ttrue_reg->var_off = tnum_or(true_reg->var_off,\n\t\t\t\t\t\t    tnum_const(val));\n\t\tbreak;\n\tcase BPF_JGE:\n\tcase BPF_JGT:\n\t{\n\t\tu64 false_umin = opcode == BPF_JGT ? val    : val + 1;\n\t\tu64 true_umax = opcode == BPF_JGT ? val - 1 : val;\n\n\t\tif (is_jmp32) {\n\t\t\tfalse_umin += gen_hi_min(false_reg->var_off);\n\t\t\ttrue_umax += gen_hi_max(true_reg->var_off);\n\t\t}\n\t\tfalse_reg->umin_value = max(false_reg->umin_value, false_umin);\n\t\ttrue_reg->umax_value = min(true_reg->umax_value, true_umax);\n\t\tbreak;\n\t}\n\tcase BPF_JSGE:\n\tcase BPF_JSGT:\n\t{\n\t\ts64 false_smin = opcode == BPF_JSGT ? sval    : sval + 1;\n\t\ts64 true_smax = opcode == BPF_JSGT ? sval - 1 : sval;\n\n\t\tif (is_jmp32 && !cmp_val_with_extended_s64(sval, false_reg))\n\t\t\tbreak;\n\t\tfalse_reg->smin_value = max(false_reg->smin_value, false_smin);\n\t\ttrue_reg->smax_value = min(true_reg->smax_value, true_smax);\n\t\tbreak;\n\t}\n\tcase BPF_JLE:\n\tcase BPF_JLT:\n\t{\n\t\tu64 false_umax = opcode == BPF_JLT ? val    : val - 1;\n\t\tu64 true_umin = opcode == BPF_JLT ? val + 1 : val;\n\n\t\tif (is_jmp32) {\n\t\t\tfalse_umax += gen_hi_max(false_reg->var_off);\n\t\t\ttrue_umin += gen_hi_min(true_reg->var_off);\n\t\t}\n\t\tfalse_reg->umax_value = min(false_reg->umax_value, false_umax);\n\t\ttrue_reg->umin_value = max(true_reg->umin_value, true_umin);\n\t\tbreak;\n\t}\n\tcase BPF_JSLE:\n\tcase BPF_JSLT:\n\t{\n\t\ts64 false_smax = opcode == BPF_JSLT ? sval    : sval - 1;\n\t\ts64 true_smin = opcode == BPF_JSLT ? sval + 1 : sval;\n\n\t\tif (is_jmp32 && !cmp_val_with_extended_s64(sval, false_reg))\n\t\t\tbreak;\n\t\tfalse_reg->smax_value = min(false_reg->smax_value, false_smax);\n\t\ttrue_reg->smin_value = max(true_reg->smin_value, true_smin);\n\t\tbreak;\n\t}\n\tdefault:\n\t\tbreak;\n\t}\n\n\t__reg_deduce_bounds(false_reg);\n\t__reg_deduce_bounds(true_reg);\n\t/* We might have learned some bits from the bounds. */\n\t__reg_bound_offset(false_reg);\n\t__reg_bound_offset(true_reg);\n\t/* Intersecting with the old var_off might have improved our bounds\n\t * slightly.  e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),\n\t * then new var_off is (0; 0x7f...fc) which improves our umax.\n\t */\n\t__update_reg_bounds(false_reg);\n\t__update_reg_bounds(true_reg);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -96,10 +96,6 @@\n \t/* We might have learned some bits from the bounds. */\n \t__reg_bound_offset(false_reg);\n \t__reg_bound_offset(true_reg);\n-\tif (is_jmp32) {\n-\t\t__reg_bound_offset32(false_reg);\n-\t\t__reg_bound_offset32(true_reg);\n-\t}\n \t/* Intersecting with the old var_off might have improved our bounds\n \t * slightly.  e.g. if umax was 0x7f...f and var_off was (0; 0xf...fc),\n \t * then new var_off is (0; 0x7f...fc) which improves our umax.",
+                "function_modified_lines": {
+                    "added": [],
+                    "deleted": [
+                        "\tif (is_jmp32) {",
+                        "\t\t__reg_bound_offset32(false_reg);",
+                        "\t\t__reg_bound_offset32(true_reg);",
+                        "\t}"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125",
+                    "CWE-787"
+                ],
+                "cve_description": "In the Linux kernel 5.5.0 and newer, the bpf verifier (kernel/bpf/verifier.c) did not properly restrict the register bounds for 32-bit operations, leading to out-of-bounds reads and writes in kernel memory. The vulnerability also affects the Linux 5.4 stable series, starting with v5.4.7, as the introducing commit was backported to that branch. This vulnerability was fixed in 5.6.1, 5.5.14, and 5.4.29. (issue is aka ZDI-CAN-10780)",
+                "id": 2808
+            }
+        ]
+    },
+    "CVE-2022-2905": {
+        "item": [
+            {
+                "cve_id": "CVE-2022-2905",
+                "code_before_change": "static int\nrecord_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,\n\t\tint func_id, int insn_idx)\n{\n\tstruct bpf_insn_aux_data *aux = &env->insn_aux_data[insn_idx];\n\tstruct bpf_reg_state *regs = cur_regs(env), *reg;\n\tstruct bpf_map *map = meta->map_ptr;\n\tstruct tnum range;\n\tu64 val;\n\tint err;\n\n\tif (func_id != BPF_FUNC_tail_call)\n\t\treturn 0;\n\tif (!map || map->map_type != BPF_MAP_TYPE_PROG_ARRAY) {\n\t\tverbose(env, \"kernel subsystem misconfigured verifier\\n\");\n\t\treturn -EINVAL;\n\t}\n\n\trange = tnum_range(0, map->max_entries - 1);\n\treg = &regs[BPF_REG_3];\n\n\tif (!register_is_const(reg) || !tnum_in(range, reg->var_off)) {\n\t\tbpf_map_key_store(aux, BPF_MAP_KEY_POISON);\n\t\treturn 0;\n\t}\n\n\terr = mark_chain_precision(env, BPF_REG_3);\n\tif (err)\n\t\treturn err;\n\n\tval = reg->var_off.value;\n\tif (bpf_map_key_unseen(aux))\n\t\tbpf_map_key_store(aux, val);\n\telse if (!bpf_map_key_poisoned(aux) &&\n\t\t  bpf_map_key_immediate(aux) != val)\n\t\tbpf_map_key_store(aux, BPF_MAP_KEY_POISON);\n\treturn 0;\n}",
+                "code_after_change": "static int\nrecord_func_key(struct bpf_verifier_env *env, struct bpf_call_arg_meta *meta,\n\t\tint func_id, int insn_idx)\n{\n\tstruct bpf_insn_aux_data *aux = &env->insn_aux_data[insn_idx];\n\tstruct bpf_reg_state *regs = cur_regs(env), *reg;\n\tstruct bpf_map *map = meta->map_ptr;\n\tu64 val, max;\n\tint err;\n\n\tif (func_id != BPF_FUNC_tail_call)\n\t\treturn 0;\n\tif (!map || map->map_type != BPF_MAP_TYPE_PROG_ARRAY) {\n\t\tverbose(env, \"kernel subsystem misconfigured verifier\\n\");\n\t\treturn -EINVAL;\n\t}\n\n\treg = &regs[BPF_REG_3];\n\tval = reg->var_off.value;\n\tmax = map->max_entries;\n\n\tif (!(register_is_const(reg) && val < max)) {\n\t\tbpf_map_key_store(aux, BPF_MAP_KEY_POISON);\n\t\treturn 0;\n\t}\n\n\terr = mark_chain_precision(env, BPF_REG_3);\n\tif (err)\n\t\treturn err;\n\tif (bpf_map_key_unseen(aux))\n\t\tbpf_map_key_store(aux, val);\n\telse if (!bpf_map_key_poisoned(aux) &&\n\t\t  bpf_map_key_immediate(aux) != val)\n\t\tbpf_map_key_store(aux, BPF_MAP_KEY_POISON);\n\treturn 0;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -5,8 +5,7 @@\n \tstruct bpf_insn_aux_data *aux = &env->insn_aux_data[insn_idx];\n \tstruct bpf_reg_state *regs = cur_regs(env), *reg;\n \tstruct bpf_map *map = meta->map_ptr;\n-\tstruct tnum range;\n-\tu64 val;\n+\tu64 val, max;\n \tint err;\n \n \tif (func_id != BPF_FUNC_tail_call)\n@@ -16,10 +15,11 @@\n \t\treturn -EINVAL;\n \t}\n \n-\trange = tnum_range(0, map->max_entries - 1);\n \treg = &regs[BPF_REG_3];\n+\tval = reg->var_off.value;\n+\tmax = map->max_entries;\n \n-\tif (!register_is_const(reg) || !tnum_in(range, reg->var_off)) {\n+\tif (!(register_is_const(reg) && val < max)) {\n \t\tbpf_map_key_store(aux, BPF_MAP_KEY_POISON);\n \t\treturn 0;\n \t}\n@@ -27,8 +27,6 @@\n \terr = mark_chain_precision(env, BPF_REG_3);\n \tif (err)\n \t\treturn err;\n-\n-\tval = reg->var_off.value;\n \tif (bpf_map_key_unseen(aux))\n \t\tbpf_map_key_store(aux, val);\n \telse if (!bpf_map_key_poisoned(aux) &&",
+                "function_modified_lines": {
+                    "added": [
+                        "\tu64 val, max;",
+                        "\tval = reg->var_off.value;",
+                        "\tmax = map->max_entries;",
+                        "\tif (!(register_is_const(reg) && val < max)) {"
+                    ],
+                    "deleted": [
+                        "\tstruct tnum range;",
+                        "\tu64 val;",
+                        "\trange = tnum_range(0, map->max_entries - 1);",
+                        "\tif (!register_is_const(reg) || !tnum_in(range, reg->var_off)) {",
+                        "",
+                        "\tval = reg->var_off.value;"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An out-of-bounds memory read flaw was found in the Linux kernel's BPF subsystem in how a user calls the bpf_tail_call function with a key larger than the max_entries of the map. This flaw allows a local user to gain unauthorized access to data.",
+                "id": 3510
+            }
+        ]
+    },
+    "CVE-2022-47938": {
+        "item": [
+            {
+                "cve_id": "CVE-2022-47938",
+                "code_before_change": "static int smb2_get_data_area_len(unsigned int *off, unsigned int *len,\n\t\t\t\t  struct smb2_hdr *hdr)\n{\n\tint ret = 0;\n\n\t*off = 0;\n\t*len = 0;\n\n\t/* error reqeusts do not have data area */\n\tif (hdr->Status && hdr->Status != STATUS_MORE_PROCESSING_REQUIRED &&\n\t    (((struct smb2_err_rsp *)hdr)->StructureSize) == SMB2_ERROR_STRUCTURE_SIZE2_LE)\n\t\treturn ret;\n\n\t/*\n\t * Following commands have data areas so we have to get the location\n\t * of the data buffer offset and data buffer length for the particular\n\t * command.\n\t */\n\tswitch (hdr->Command) {\n\tcase SMB2_SESSION_SETUP:\n\t\t*off = le16_to_cpu(((struct smb2_sess_setup_req *)hdr)->SecurityBufferOffset);\n\t\t*len = le16_to_cpu(((struct smb2_sess_setup_req *)hdr)->SecurityBufferLength);\n\t\tbreak;\n\tcase SMB2_TREE_CONNECT:\n\t\t*off = le16_to_cpu(((struct smb2_tree_connect_req *)hdr)->PathOffset);\n\t\t*len = le16_to_cpu(((struct smb2_tree_connect_req *)hdr)->PathLength);\n\t\tbreak;\n\tcase SMB2_CREATE:\n\t{\n\t\tif (((struct smb2_create_req *)hdr)->CreateContextsLength) {\n\t\t\t*off = le32_to_cpu(((struct smb2_create_req *)\n\t\t\t\thdr)->CreateContextsOffset);\n\t\t\t*len = le32_to_cpu(((struct smb2_create_req *)\n\t\t\t\thdr)->CreateContextsLength);\n\t\t\tbreak;\n\t\t}\n\n\t\t*off = le16_to_cpu(((struct smb2_create_req *)hdr)->NameOffset);\n\t\t*len = le16_to_cpu(((struct smb2_create_req *)hdr)->NameLength);\n\t\tbreak;\n\t}\n\tcase SMB2_QUERY_INFO:\n\t\t*off = le16_to_cpu(((struct smb2_query_info_req *)hdr)->InputBufferOffset);\n\t\t*len = le32_to_cpu(((struct smb2_query_info_req *)hdr)->InputBufferLength);\n\t\tbreak;\n\tcase SMB2_SET_INFO:\n\t\t*off = le16_to_cpu(((struct smb2_set_info_req *)hdr)->BufferOffset);\n\t\t*len = le32_to_cpu(((struct smb2_set_info_req *)hdr)->BufferLength);\n\t\tbreak;\n\tcase SMB2_READ:\n\t\t*off = le16_to_cpu(((struct smb2_read_req *)hdr)->ReadChannelInfoOffset);\n\t\t*len = le16_to_cpu(((struct smb2_read_req *)hdr)->ReadChannelInfoLength);\n\t\tbreak;\n\tcase SMB2_WRITE:\n\t\tif (((struct smb2_write_req *)hdr)->DataOffset ||\n\t\t    ((struct smb2_write_req *)hdr)->Length) {\n\t\t\t*off = max_t(unsigned int,\n\t\t\t\t     le16_to_cpu(((struct smb2_write_req *)hdr)->DataOffset),\n\t\t\t\t     offsetof(struct smb2_write_req, Buffer));\n\t\t\t*len = le32_to_cpu(((struct smb2_write_req *)hdr)->Length);\n\t\t\tbreak;\n\t\t}\n\n\t\t*off = le16_to_cpu(((struct smb2_write_req *)hdr)->WriteChannelInfoOffset);\n\t\t*len = le16_to_cpu(((struct smb2_write_req *)hdr)->WriteChannelInfoLength);\n\t\tbreak;\n\tcase SMB2_QUERY_DIRECTORY:\n\t\t*off = le16_to_cpu(((struct smb2_query_directory_req *)hdr)->FileNameOffset);\n\t\t*len = le16_to_cpu(((struct smb2_query_directory_req *)hdr)->FileNameLength);\n\t\tbreak;\n\tcase SMB2_LOCK:\n\t{\n\t\tint lock_count;\n\n\t\t/*\n\t\t * smb2_lock request size is 48 included single\n\t\t * smb2_lock_element structure size.\n\t\t */\n\t\tlock_count = le16_to_cpu(((struct smb2_lock_req *)hdr)->LockCount) - 1;\n\t\tif (lock_count > 0) {\n\t\t\t*off = __SMB2_HEADER_STRUCTURE_SIZE + 48;\n\t\t\t*len = sizeof(struct smb2_lock_element) * lock_count;\n\t\t}\n\t\tbreak;\n\t}\n\tcase SMB2_IOCTL:\n\t\t*off = le32_to_cpu(((struct smb2_ioctl_req *)hdr)->InputOffset);\n\t\t*len = le32_to_cpu(((struct smb2_ioctl_req *)hdr)->InputCount);\n\t\tbreak;\n\tdefault:\n\t\tksmbd_debug(SMB, \"no length check for command\\n\");\n\t\tbreak;\n\t}\n\n\tif (*off > 4096) {\n\t\tksmbd_debug(SMB, \"offset %d too large\\n\", *off);\n\t\tret = -EINVAL;\n\t} else if ((u64)*off + *len > MAX_STREAM_PROT_LEN) {\n\t\tksmbd_debug(SMB, \"Request is larger than maximum stream protocol length(%u): %llu\\n\",\n\t\t\t    MAX_STREAM_PROT_LEN, (u64)*off + *len);\n\t\tret = -EINVAL;\n\t}\n\n\treturn ret;\n}",
+                "code_after_change": "static int smb2_get_data_area_len(unsigned int *off, unsigned int *len,\n\t\t\t\t  struct smb2_hdr *hdr)\n{\n\tint ret = 0;\n\n\t*off = 0;\n\t*len = 0;\n\n\t/*\n\t * Following commands have data areas so we have to get the location\n\t * of the data buffer offset and data buffer length for the particular\n\t * command.\n\t */\n\tswitch (hdr->Command) {\n\tcase SMB2_SESSION_SETUP:\n\t\t*off = le16_to_cpu(((struct smb2_sess_setup_req *)hdr)->SecurityBufferOffset);\n\t\t*len = le16_to_cpu(((struct smb2_sess_setup_req *)hdr)->SecurityBufferLength);\n\t\tbreak;\n\tcase SMB2_TREE_CONNECT:\n\t\t*off = le16_to_cpu(((struct smb2_tree_connect_req *)hdr)->PathOffset);\n\t\t*len = le16_to_cpu(((struct smb2_tree_connect_req *)hdr)->PathLength);\n\t\tbreak;\n\tcase SMB2_CREATE:\n\t{\n\t\tif (((struct smb2_create_req *)hdr)->CreateContextsLength) {\n\t\t\t*off = le32_to_cpu(((struct smb2_create_req *)\n\t\t\t\thdr)->CreateContextsOffset);\n\t\t\t*len = le32_to_cpu(((struct smb2_create_req *)\n\t\t\t\thdr)->CreateContextsLength);\n\t\t\tbreak;\n\t\t}\n\n\t\t*off = le16_to_cpu(((struct smb2_create_req *)hdr)->NameOffset);\n\t\t*len = le16_to_cpu(((struct smb2_create_req *)hdr)->NameLength);\n\t\tbreak;\n\t}\n\tcase SMB2_QUERY_INFO:\n\t\t*off = le16_to_cpu(((struct smb2_query_info_req *)hdr)->InputBufferOffset);\n\t\t*len = le32_to_cpu(((struct smb2_query_info_req *)hdr)->InputBufferLength);\n\t\tbreak;\n\tcase SMB2_SET_INFO:\n\t\t*off = le16_to_cpu(((struct smb2_set_info_req *)hdr)->BufferOffset);\n\t\t*len = le32_to_cpu(((struct smb2_set_info_req *)hdr)->BufferLength);\n\t\tbreak;\n\tcase SMB2_READ:\n\t\t*off = le16_to_cpu(((struct smb2_read_req *)hdr)->ReadChannelInfoOffset);\n\t\t*len = le16_to_cpu(((struct smb2_read_req *)hdr)->ReadChannelInfoLength);\n\t\tbreak;\n\tcase SMB2_WRITE:\n\t\tif (((struct smb2_write_req *)hdr)->DataOffset ||\n\t\t    ((struct smb2_write_req *)hdr)->Length) {\n\t\t\t*off = max_t(unsigned int,\n\t\t\t\t     le16_to_cpu(((struct smb2_write_req *)hdr)->DataOffset),\n\t\t\t\t     offsetof(struct smb2_write_req, Buffer));\n\t\t\t*len = le32_to_cpu(((struct smb2_write_req *)hdr)->Length);\n\t\t\tbreak;\n\t\t}\n\n\t\t*off = le16_to_cpu(((struct smb2_write_req *)hdr)->WriteChannelInfoOffset);\n\t\t*len = le16_to_cpu(((struct smb2_write_req *)hdr)->WriteChannelInfoLength);\n\t\tbreak;\n\tcase SMB2_QUERY_DIRECTORY:\n\t\t*off = le16_to_cpu(((struct smb2_query_directory_req *)hdr)->FileNameOffset);\n\t\t*len = le16_to_cpu(((struct smb2_query_directory_req *)hdr)->FileNameLength);\n\t\tbreak;\n\tcase SMB2_LOCK:\n\t{\n\t\tint lock_count;\n\n\t\t/*\n\t\t * smb2_lock request size is 48 included single\n\t\t * smb2_lock_element structure size.\n\t\t */\n\t\tlock_count = le16_to_cpu(((struct smb2_lock_req *)hdr)->LockCount) - 1;\n\t\tif (lock_count > 0) {\n\t\t\t*off = __SMB2_HEADER_STRUCTURE_SIZE + 48;\n\t\t\t*len = sizeof(struct smb2_lock_element) * lock_count;\n\t\t}\n\t\tbreak;\n\t}\n\tcase SMB2_IOCTL:\n\t\t*off = le32_to_cpu(((struct smb2_ioctl_req *)hdr)->InputOffset);\n\t\t*len = le32_to_cpu(((struct smb2_ioctl_req *)hdr)->InputCount);\n\t\tbreak;\n\tdefault:\n\t\tksmbd_debug(SMB, \"no length check for command\\n\");\n\t\tbreak;\n\t}\n\n\tif (*off > 4096) {\n\t\tksmbd_debug(SMB, \"offset %d too large\\n\", *off);\n\t\tret = -EINVAL;\n\t} else if ((u64)*off + *len > MAX_STREAM_PROT_LEN) {\n\t\tksmbd_debug(SMB, \"Request is larger than maximum stream protocol length(%u): %llu\\n\",\n\t\t\t    MAX_STREAM_PROT_LEN, (u64)*off + *len);\n\t\tret = -EINVAL;\n\t}\n\n\treturn ret;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -5,11 +5,6 @@\n \n \t*off = 0;\n \t*len = 0;\n-\n-\t/* error reqeusts do not have data area */\n-\tif (hdr->Status && hdr->Status != STATUS_MORE_PROCESSING_REQUIRED &&\n-\t    (((struct smb2_err_rsp *)hdr)->StructureSize) == SMB2_ERROR_STRUCTURE_SIZE2_LE)\n-\t\treturn ret;\n \n \t/*\n \t * Following commands have data areas so we have to get the location",
+                "function_modified_lines": {
+                    "added": [],
+                    "deleted": [
+                        "",
+                        "\t/* error reqeusts do not have data area */",
+                        "\tif (hdr->Status && hdr->Status != STATUS_MORE_PROCESSING_REQUIRED &&",
+                        "\t    (((struct smb2_err_rsp *)hdr)->StructureSize) == SMB2_ERROR_STRUCTURE_SIZE2_LE)",
+                        "\t\treturn ret;"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in ksmbd in the Linux kernel 5.15 through 5.19 before 5.19.2. fs/ksmbd/smb2misc.c has an out-of-bounds read and OOPS for SMB2_TREE_CONNECT.",
+                "id": 3767
+            }
+        ]
+    },
+    "CVE-2022-20132": {
+        "item": [
+            {
+                "cve_id": "CVE-2022-20132",
+                "code_before_change": "static int u2fzero_probe(struct hid_device *hdev,\n\t\t\t const struct hid_device_id *id)\n{\n\tstruct u2fzero_device *dev;\n\tunsigned int minor;\n\tint ret;\n\n\tif (!hid_is_using_ll_driver(hdev, &usb_hid_driver))\n\t\treturn -EINVAL;\n\n\tdev = devm_kzalloc(&hdev->dev, sizeof(*dev), GFP_KERNEL);\n\tif (dev == NULL)\n\t\treturn -ENOMEM;\n\n\tdev->hw_revision = id->driver_data;\n\n\tdev->buf_out = devm_kmalloc(&hdev->dev,\n\t\tsizeof(struct u2f_hid_report), GFP_KERNEL);\n\tif (dev->buf_out == NULL)\n\t\treturn -ENOMEM;\n\n\tdev->buf_in = devm_kmalloc(&hdev->dev,\n\t\tsizeof(struct u2f_hid_msg), GFP_KERNEL);\n\tif (dev->buf_in == NULL)\n\t\treturn -ENOMEM;\n\n\tret = hid_parse(hdev);\n\tif (ret)\n\t\treturn ret;\n\n\tdev->hdev = hdev;\n\thid_set_drvdata(hdev, dev);\n\tmutex_init(&dev->lock);\n\n\tret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);\n\tif (ret)\n\t\treturn ret;\n\n\tu2fzero_fill_in_urb(dev);\n\n\tdev->present = true;\n\n\tminor = ((struct hidraw *) hdev->hidraw)->minor;\n\n\tret = u2fzero_init_led(dev, minor);\n\tif (ret) {\n\t\thid_hw_stop(hdev);\n\t\treturn ret;\n\t}\n\n\thid_info(hdev, \"%s LED initialised\\n\", hw_configs[dev->hw_revision].name);\n\n\tret = u2fzero_init_hwrng(dev, minor);\n\tif (ret) {\n\t\thid_hw_stop(hdev);\n\t\treturn ret;\n\t}\n\n\thid_info(hdev, \"%s RNG initialised\\n\", hw_configs[dev->hw_revision].name);\n\n\treturn 0;\n}",
+                "code_after_change": "static int u2fzero_probe(struct hid_device *hdev,\n\t\t\t const struct hid_device_id *id)\n{\n\tstruct u2fzero_device *dev;\n\tunsigned int minor;\n\tint ret;\n\n\tif (!hid_is_usb(hdev))\n\t\treturn -EINVAL;\n\n\tdev = devm_kzalloc(&hdev->dev, sizeof(*dev), GFP_KERNEL);\n\tif (dev == NULL)\n\t\treturn -ENOMEM;\n\n\tdev->hw_revision = id->driver_data;\n\n\tdev->buf_out = devm_kmalloc(&hdev->dev,\n\t\tsizeof(struct u2f_hid_report), GFP_KERNEL);\n\tif (dev->buf_out == NULL)\n\t\treturn -ENOMEM;\n\n\tdev->buf_in = devm_kmalloc(&hdev->dev,\n\t\tsizeof(struct u2f_hid_msg), GFP_KERNEL);\n\tif (dev->buf_in == NULL)\n\t\treturn -ENOMEM;\n\n\tret = hid_parse(hdev);\n\tif (ret)\n\t\treturn ret;\n\n\tdev->hdev = hdev;\n\thid_set_drvdata(hdev, dev);\n\tmutex_init(&dev->lock);\n\n\tret = hid_hw_start(hdev, HID_CONNECT_HIDRAW);\n\tif (ret)\n\t\treturn ret;\n\n\tu2fzero_fill_in_urb(dev);\n\n\tdev->present = true;\n\n\tminor = ((struct hidraw *) hdev->hidraw)->minor;\n\n\tret = u2fzero_init_led(dev, minor);\n\tif (ret) {\n\t\thid_hw_stop(hdev);\n\t\treturn ret;\n\t}\n\n\thid_info(hdev, \"%s LED initialised\\n\", hw_configs[dev->hw_revision].name);\n\n\tret = u2fzero_init_hwrng(dev, minor);\n\tif (ret) {\n\t\thid_hw_stop(hdev);\n\t\treturn ret;\n\t}\n\n\thid_info(hdev, \"%s RNG initialised\\n\", hw_configs[dev->hw_revision].name);\n\n\treturn 0;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -5,7 +5,7 @@\n \tunsigned int minor;\n \tint ret;\n \n-\tif (!hid_is_using_ll_driver(hdev, &usb_hid_driver))\n+\tif (!hid_is_usb(hdev))\n \t\treturn -EINVAL;\n \n \tdev = devm_kzalloc(&hdev->dev, sizeof(*dev), GFP_KERNEL);",
+                "function_modified_lines": {
+                    "added": [
+                        "\tif (!hid_is_usb(hdev))"
+                    ],
+                    "deleted": [
+                        "\tif (!hid_is_using_ll_driver(hdev, &usb_hid_driver))"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "In lg_probe and related functions of hid-lg.c and other USB HID files, there is a possible out of bounds read due to improper input validation. This could lead to local information disclosure if a malicious USB HID device were plugged in, with no additional execution privileges needed. User interaction is not needed for exploitation.Product: AndroidVersions: Android kernelAndroid ID: A-188677105References: Upstream kernel",
+                "id": 3334
+            }
+        ]
+    },
+    "CVE-2018-20854": {
+        "item": [
+            {
+                "cve_id": "CVE-2018-20854",
+                "code_before_change": "static int serdes_probe(struct platform_device *pdev)\n{\n\tstruct phy_provider *provider;\n\tstruct serdes_ctrl *ctrl;\n\tunsigned int i;\n\tint ret;\n\n\tctrl = devm_kzalloc(&pdev->dev, sizeof(*ctrl), GFP_KERNEL);\n\tif (!ctrl)\n\t\treturn -ENOMEM;\n\n\tctrl->dev = &pdev->dev;\n\tctrl->regs = syscon_node_to_regmap(pdev->dev.parent->of_node);\n\tif (IS_ERR(ctrl->regs))\n\t\treturn PTR_ERR(ctrl->regs);\n\n\tfor (i = 0; i <= SERDES_MAX; i++) {\n\t\tret = serdes_phy_create(ctrl, i, &ctrl->phys[i]);\n\t\tif (ret)\n\t\t\treturn ret;\n\t}\n\n\tdev_set_drvdata(&pdev->dev, ctrl);\n\n\tprovider = devm_of_phy_provider_register(ctrl->dev,\n\t\t\t\t\t\t serdes_simple_xlate);\n\n\treturn PTR_ERR_OR_ZERO(provider);\n}",
+                "code_after_change": "static int serdes_probe(struct platform_device *pdev)\n{\n\tstruct phy_provider *provider;\n\tstruct serdes_ctrl *ctrl;\n\tunsigned int i;\n\tint ret;\n\n\tctrl = devm_kzalloc(&pdev->dev, sizeof(*ctrl), GFP_KERNEL);\n\tif (!ctrl)\n\t\treturn -ENOMEM;\n\n\tctrl->dev = &pdev->dev;\n\tctrl->regs = syscon_node_to_regmap(pdev->dev.parent->of_node);\n\tif (IS_ERR(ctrl->regs))\n\t\treturn PTR_ERR(ctrl->regs);\n\n\tfor (i = 0; i < SERDES_MAX; i++) {\n\t\tret = serdes_phy_create(ctrl, i, &ctrl->phys[i]);\n\t\tif (ret)\n\t\t\treturn ret;\n\t}\n\n\tdev_set_drvdata(&pdev->dev, ctrl);\n\n\tprovider = devm_of_phy_provider_register(ctrl->dev,\n\t\t\t\t\t\t serdes_simple_xlate);\n\n\treturn PTR_ERR_OR_ZERO(provider);\n}",
+                "patch": "--- code before\n+++ code after\n@@ -14,7 +14,7 @@\n \tif (IS_ERR(ctrl->regs))\n \t\treturn PTR_ERR(ctrl->regs);\n \n-\tfor (i = 0; i <= SERDES_MAX; i++) {\n+\tfor (i = 0; i < SERDES_MAX; i++) {\n \t\tret = serdes_phy_create(ctrl, i, &ctrl->phys[i]);\n \t\tif (ret)\n \t\t\treturn ret;",
+                "function_modified_lines": {
+                    "added": [
+                        "\tfor (i = 0; i < SERDES_MAX; i++) {"
+                    ],
+                    "deleted": [
+                        "\tfor (i = 0; i <= SERDES_MAX; i++) {"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "An issue was discovered in the Linux kernel before 4.20. drivers/phy/mscc/phy-ocelot-serdes.c has an off-by-one error with a resultant ctrl->phys out-of-bounds read.",
+                "id": 1784
+            }
+        ]
+    },
+    "CVE-2020-28915": {
+        "item": [
+            {
+                "cve_id": "CVE-2020-28915",
+                "code_before_change": "static int fbcon_get_font(struct vc_data *vc, struct console_font *font)\n{\n\tu8 *fontdata = vc->vc_font.data;\n\tu8 *data = font->data;\n\tint i, j;\n\n\tfont->width = vc->vc_font.width;\n\tfont->height = vc->vc_font.height;\n\tfont->charcount = vc->vc_hi_font_mask ? 512 : 256;\n\tif (!font->data)\n\t\treturn 0;\n\n\tif (font->width <= 8) {\n\t\tj = vc->vc_font.height;\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tmemcpy(data, fontdata, j);\n\t\t\tmemset(data + j, 0, 32 - j);\n\t\t\tdata += 32;\n\t\t\tfontdata += j;\n\t\t}\n\t} else if (font->width <= 16) {\n\t\tj = vc->vc_font.height * 2;\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tmemcpy(data, fontdata, j);\n\t\t\tmemset(data + j, 0, 64 - j);\n\t\t\tdata += 64;\n\t\t\tfontdata += j;\n\t\t}\n\t} else if (font->width <= 24) {\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tfor (j = 0; j < vc->vc_font.height; j++) {\n\t\t\t\t*data++ = fontdata[0];\n\t\t\t\t*data++ = fontdata[1];\n\t\t\t\t*data++ = fontdata[2];\n\t\t\t\tfontdata += sizeof(u32);\n\t\t\t}\n\t\t\tmemset(data, 0, 3 * (32 - j));\n\t\t\tdata += 3 * (32 - j);\n\t\t}\n\t} else {\n\t\tj = vc->vc_font.height * 4;\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tmemcpy(data, fontdata, j);\n\t\t\tmemset(data + j, 0, 128 - j);\n\t\t\tdata += 128;\n\t\t\tfontdata += j;\n\t\t}\n\t}\n\treturn 0;\n}",
+                "code_after_change": "static int fbcon_get_font(struct vc_data *vc, struct console_font *font)\n{\n\tu8 *fontdata = vc->vc_font.data;\n\tu8 *data = font->data;\n\tint i, j;\n\n\tfont->width = vc->vc_font.width;\n\tfont->height = vc->vc_font.height;\n\tfont->charcount = vc->vc_hi_font_mask ? 512 : 256;\n\tif (!font->data)\n\t\treturn 0;\n\n\tif (font->width <= 8) {\n\t\tj = vc->vc_font.height;\n\t\tif (font->charcount * j > FNTSIZE(fontdata))\n\t\t\treturn -EINVAL;\n\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tmemcpy(data, fontdata, j);\n\t\t\tmemset(data + j, 0, 32 - j);\n\t\t\tdata += 32;\n\t\t\tfontdata += j;\n\t\t}\n\t} else if (font->width <= 16) {\n\t\tj = vc->vc_font.height * 2;\n\t\tif (font->charcount * j > FNTSIZE(fontdata))\n\t\t\treturn -EINVAL;\n\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tmemcpy(data, fontdata, j);\n\t\t\tmemset(data + j, 0, 64 - j);\n\t\t\tdata += 64;\n\t\t\tfontdata += j;\n\t\t}\n\t} else if (font->width <= 24) {\n\t\tif (font->charcount * (vc->vc_font.height * sizeof(u32)) > FNTSIZE(fontdata))\n\t\t\treturn -EINVAL;\n\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tfor (j = 0; j < vc->vc_font.height; j++) {\n\t\t\t\t*data++ = fontdata[0];\n\t\t\t\t*data++ = fontdata[1];\n\t\t\t\t*data++ = fontdata[2];\n\t\t\t\tfontdata += sizeof(u32);\n\t\t\t}\n\t\t\tmemset(data, 0, 3 * (32 - j));\n\t\t\tdata += 3 * (32 - j);\n\t\t}\n\t} else {\n\t\tj = vc->vc_font.height * 4;\n\t\tif (font->charcount * j > FNTSIZE(fontdata))\n\t\t\treturn -EINVAL;\n\n\t\tfor (i = 0; i < font->charcount; i++) {\n\t\t\tmemcpy(data, fontdata, j);\n\t\t\tmemset(data + j, 0, 128 - j);\n\t\t\tdata += 128;\n\t\t\tfontdata += j;\n\t\t}\n\t}\n\treturn 0;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -12,6 +12,9 @@\n \n \tif (font->width <= 8) {\n \t\tj = vc->vc_font.height;\n+\t\tif (font->charcount * j > FNTSIZE(fontdata))\n+\t\t\treturn -EINVAL;\n+\n \t\tfor (i = 0; i < font->charcount; i++) {\n \t\t\tmemcpy(data, fontdata, j);\n \t\t\tmemset(data + j, 0, 32 - j);\n@@ -20,6 +23,9 @@\n \t\t}\n \t} else if (font->width <= 16) {\n \t\tj = vc->vc_font.height * 2;\n+\t\tif (font->charcount * j > FNTSIZE(fontdata))\n+\t\t\treturn -EINVAL;\n+\n \t\tfor (i = 0; i < font->charcount; i++) {\n \t\t\tmemcpy(data, fontdata, j);\n \t\t\tmemset(data + j, 0, 64 - j);\n@@ -27,6 +33,9 @@\n \t\t\tfontdata += j;\n \t\t}\n \t} else if (font->width <= 24) {\n+\t\tif (font->charcount * (vc->vc_font.height * sizeof(u32)) > FNTSIZE(fontdata))\n+\t\t\treturn -EINVAL;\n+\n \t\tfor (i = 0; i < font->charcount; i++) {\n \t\t\tfor (j = 0; j < vc->vc_font.height; j++) {\n \t\t\t\t*data++ = fontdata[0];\n@@ -39,6 +48,9 @@\n \t\t}\n \t} else {\n \t\tj = vc->vc_font.height * 4;\n+\t\tif (font->charcount * j > FNTSIZE(fontdata))\n+\t\t\treturn -EINVAL;\n+\n \t\tfor (i = 0; i < font->charcount; i++) {\n \t\t\tmemcpy(data, fontdata, j);\n \t\t\tmemset(data + j, 0, 128 - j);",
+                "function_modified_lines": {
+                    "added": [
+                        "\t\tif (font->charcount * j > FNTSIZE(fontdata))",
+                        "\t\t\treturn -EINVAL;",
+                        "",
+                        "\t\tif (font->charcount * j > FNTSIZE(fontdata))",
+                        "\t\t\treturn -EINVAL;",
+                        "",
+                        "\t\tif (font->charcount * (vc->vc_font.height * sizeof(u32)) > FNTSIZE(fontdata))",
+                        "\t\t\treturn -EINVAL;",
+                        "",
+                        "\t\tif (font->charcount * j > FNTSIZE(fontdata))",
+                        "\t\t\treturn -EINVAL;",
+                        ""
+                    ],
+                    "deleted": []
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "A buffer over-read (at the framebuffer layer) in the fbcon code in the Linux kernel before 5.8.15 could be used by local attackers to read kernel memory, aka CID-6735b4632def.",
+                "id": 2660
+            }
+        ]
+    },
+    "CVE-2017-13305": {
+        "item": [
+            {
+                "cve_id": "CVE-2017-13305",
+                "code_before_change": "static int valid_master_desc(const char *new_desc, const char *orig_desc)\n{\n\tif (!memcmp(new_desc, KEY_TRUSTED_PREFIX, KEY_TRUSTED_PREFIX_LEN)) {\n\t\tif (strlen(new_desc) == KEY_TRUSTED_PREFIX_LEN)\n\t\t\tgoto out;\n\t\tif (orig_desc)\n\t\t\tif (memcmp(new_desc, orig_desc, KEY_TRUSTED_PREFIX_LEN))\n\t\t\t\tgoto out;\n\t} else if (!memcmp(new_desc, KEY_USER_PREFIX, KEY_USER_PREFIX_LEN)) {\n\t\tif (strlen(new_desc) == KEY_USER_PREFIX_LEN)\n\t\t\tgoto out;\n\t\tif (orig_desc)\n\t\t\tif (memcmp(new_desc, orig_desc, KEY_USER_PREFIX_LEN))\n\t\t\t\tgoto out;\n\t} else\n\t\tgoto out;\n\treturn 0;\nout:\n\treturn -EINVAL;\n}",
+                "code_after_change": "static int valid_master_desc(const char *new_desc, const char *orig_desc)\n{\n\tint prefix_len;\n\n\tif (!strncmp(new_desc, KEY_TRUSTED_PREFIX, KEY_TRUSTED_PREFIX_LEN))\n\t\tprefix_len = KEY_TRUSTED_PREFIX_LEN;\n\telse if (!strncmp(new_desc, KEY_USER_PREFIX, KEY_USER_PREFIX_LEN))\n\t\tprefix_len = KEY_USER_PREFIX_LEN;\n\telse\n\t\treturn -EINVAL;\n\n\tif (!new_desc[prefix_len])\n\t\treturn -EINVAL;\n\n\tif (orig_desc && strncmp(new_desc, orig_desc, prefix_len))\n\t\treturn -EINVAL;\n\n\treturn 0;\n}",
+                "patch": "--- code before\n+++ code after\n@@ -1,20 +1,19 @@\n static int valid_master_desc(const char *new_desc, const char *orig_desc)\n {\n-\tif (!memcmp(new_desc, KEY_TRUSTED_PREFIX, KEY_TRUSTED_PREFIX_LEN)) {\n-\t\tif (strlen(new_desc) == KEY_TRUSTED_PREFIX_LEN)\n-\t\t\tgoto out;\n-\t\tif (orig_desc)\n-\t\t\tif (memcmp(new_desc, orig_desc, KEY_TRUSTED_PREFIX_LEN))\n-\t\t\t\tgoto out;\n-\t} else if (!memcmp(new_desc, KEY_USER_PREFIX, KEY_USER_PREFIX_LEN)) {\n-\t\tif (strlen(new_desc) == KEY_USER_PREFIX_LEN)\n-\t\t\tgoto out;\n-\t\tif (orig_desc)\n-\t\t\tif (memcmp(new_desc, orig_desc, KEY_USER_PREFIX_LEN))\n-\t\t\t\tgoto out;\n-\t} else\n-\t\tgoto out;\n+\tint prefix_len;\n+\n+\tif (!strncmp(new_desc, KEY_TRUSTED_PREFIX, KEY_TRUSTED_PREFIX_LEN))\n+\t\tprefix_len = KEY_TRUSTED_PREFIX_LEN;\n+\telse if (!strncmp(new_desc, KEY_USER_PREFIX, KEY_USER_PREFIX_LEN))\n+\t\tprefix_len = KEY_USER_PREFIX_LEN;\n+\telse\n+\t\treturn -EINVAL;\n+\n+\tif (!new_desc[prefix_len])\n+\t\treturn -EINVAL;\n+\n+\tif (orig_desc && strncmp(new_desc, orig_desc, prefix_len))\n+\t\treturn -EINVAL;\n+\n \treturn 0;\n-out:\n-\treturn -EINVAL;\n }",
+                "function_modified_lines": {
+                    "added": [
+                        "\tint prefix_len;",
+                        "",
+                        "\tif (!strncmp(new_desc, KEY_TRUSTED_PREFIX, KEY_TRUSTED_PREFIX_LEN))",
+                        "\t\tprefix_len = KEY_TRUSTED_PREFIX_LEN;",
+                        "\telse if (!strncmp(new_desc, KEY_USER_PREFIX, KEY_USER_PREFIX_LEN))",
+                        "\t\tprefix_len = KEY_USER_PREFIX_LEN;",
+                        "\telse",
+                        "\t\treturn -EINVAL;",
+                        "",
+                        "\tif (!new_desc[prefix_len])",
+                        "\t\treturn -EINVAL;",
+                        "",
+                        "\tif (orig_desc && strncmp(new_desc, orig_desc, prefix_len))",
+                        "\t\treturn -EINVAL;",
+                        ""
+                    ],
+                    "deleted": [
+                        "\tif (!memcmp(new_desc, KEY_TRUSTED_PREFIX, KEY_TRUSTED_PREFIX_LEN)) {",
+                        "\t\tif (strlen(new_desc) == KEY_TRUSTED_PREFIX_LEN)",
+                        "\t\t\tgoto out;",
+                        "\t\tif (orig_desc)",
+                        "\t\t\tif (memcmp(new_desc, orig_desc, KEY_TRUSTED_PREFIX_LEN))",
+                        "\t\t\t\tgoto out;",
+                        "\t} else if (!memcmp(new_desc, KEY_USER_PREFIX, KEY_USER_PREFIX_LEN)) {",
+                        "\t\tif (strlen(new_desc) == KEY_USER_PREFIX_LEN)",
+                        "\t\t\tgoto out;",
+                        "\t\tif (orig_desc)",
+                        "\t\t\tif (memcmp(new_desc, orig_desc, KEY_USER_PREFIX_LEN))",
+                        "\t\t\t\tgoto out;",
+                        "\t} else",
+                        "\t\tgoto out;",
+                        "out:",
+                        "\treturn -EINVAL;"
+                    ]
+                },
+                "cwe": [
+                    "CWE-125"
+                ],
+                "cve_description": "A information disclosure vulnerability in the Upstream kernel encrypted-keys. Product: Android. Versions: Android kernel. Android ID: A-70526974.",
+                "id": 1276
+            }
+        ]
+    }
+}

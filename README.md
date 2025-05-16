@@ -4,7 +4,7 @@ We propose a novel LLM-based vulnerability detection technique Vul-RAG, which le
 
 ## Benchmark
 
-Based on Linux Kernel CVEs, we curated a challenging benchmark enriched with more vulnerability information. The [full dataset](./dataset/Linux_kernel_clean_data.json) encompasses 4314 vulnerable and patched code function pairs across 2073 CVEs. We focused on the top-5 CWEs within this dataset (*i.e., [Linux_kernel_clean_data_top5_CWEs.json](./dataset/Linux_kernel_clean_data_top5_CWEs.json)*) to conduct our experientments. The divided data for each CWE is placed in the directory [./benchmark](./benchmark/). The specific data fields in our benchmark contain the following information for each vulnerability:
+Based on Linux Kernel CVEs, we curated a challenging benchmark enriched with more vulnerability information. The [full dataset](./dataset/Linux_kernel_clean_data.json) encompasses 4667 vulnerable and patched code function pairs across 2174 CVEs. We focused on the top-10 CWEs within this dataset (*i.e., [Linux_kernel_clean_data_top10_CWEs.json](./dataset/Linux_kernel_clean_data_top10_CWEs.json)*) to conduct our experientments. The divided data for each CWE is placed in the directory [./benchmark](./benchmark/). The specific data fields in our benchmark contain the following information for each vulnerability:
 
 * **CVE ID:** The unique identifier assigned to a reported vulnerability in the Common Vulnerabilities and Exposures (CVE).
 * **CVE Description:** A detailed description of the vulnerability provided by the CVE system, including the manifestation of the vulnerability, potential impact, and the environment in which the vulnerability may occur.
@@ -13,19 +13,25 @@ Based on Linux Kernel CVEs, we curated a challenging benchmark enriched with mor
 * **Patched Code:** The source code snippet that has been committed to fix the vulnerability in the vulnerable code.
 * **Patch Diff:** A detailed line-level difference between the vulnerable and patched code, consisting of added and deleted lines.
 
-We divided the vulnerable and patched code pairs from the top-5 CWE categories into a training set and a test set—the training set was utilized to construct the vulnerability knowledge base, while the test set was for experimental evaluation. Our training set comprised 953 CVEs with 1,462 pairs of vulnerable and patched code snippets, while the test set included 373 CVEs with 592 pairs. The statistical data for each CWE category is detailed below.
+We divided the vulnerable and patched code pairs from the top-10 CWE categories into a training set and a test set—the training set was utilized to construct the vulnerability knowledge base, while the test set was for experimental evaluation. Our training set comprised 1154 CVEs with 2317 pairs of vulnerable and patched code snippets, while the test set included 420 CVEs with 586 pairs. The statistical data for each CWE category is detailed below.
 
-| CWE     | Training Set CVE Num. | Training Set Func. Pair Num. | Test Set CVE Num. | Test Set Func. Pair Num. |
-| ------- | --------------------- | ---------------------------- | ----------------- | ------------------------ |
-| CWE-416 | 339                   | 587                          | 145               | 267                      |
-| CWE-476 | 194                   | 262                          | 60                | 89                       |
-| CWE-362 | 169                   | 280                          | 81                | 121                      |
-| CWE-119 | 129                   | 163                          | 42                | 53                       |
-| CWE-787 | 122                   | 170                          | 45                | 62                       |
+| CWE      | Training Set CVE Num. | Training Set Func. Pair Num. | Test Set CVE Num. | Test Set Func. Pair Num. |
+|----------|----------------------|------------------------------|-------------------|--------------------------|
+| CWE-416  | 300                  | 660                          | 117               | 166                      |
+| CWE-476  | 163                  | 281                          | 58                | 71                       |
+| CWE-362  | 159                  | 320                          | 53                | 81                       |
+| CWE-119  | 111                  | 173                          | 36                | 44                       |
+| CWE-787  | 107                  | 187                          | 40                | 47                       |
+| CWE-20   | 79                   | 182                          | 36                | 46                       |
+| CWE-200  | 92                   | 152                          | 31                | 39                       |
+| CWE-125  | 89                   | 140                          | 29                | 35                       |
+| CWE-264  | 41                   | 120                          | 13                | 31                       |
+| CWE-401  | 76                   | 101                          | 23                | 26                       |
+
 
 ## Vulnerability Knowledge
 
-We leveraged GPT-3.5-Turbo to extract high-level vulnerability knowledge from the top-5 CVEs in our benchmark's training set. The extracted knowledge for each CWE is stored in [./vulnerability knowledge](./vulnerability%20knowledge/).
+We leveraged GPT-4o-mini to extract high-level vulnerability knowledge from the top-10 CVEs in our benchmark's training set. The extracted knowledge for each CWE is stored in [./vulnerability knowledge](./vulnerability%20knowledge/).
 
 ## Evaluation
 
@@ -34,16 +40,13 @@ We evaluate the effectiveness and usefulness of Vul-RAG by answering the followi
 * **RQ1: Compared to SOTA techniques:** How does Vul-RAG perform compared to state-of-the-art (SOTA) vulnerability detection techniques？
 * **RQ2: Compared to GPT-4-based techniques:** How does Vul-RAG perform compared to GPT4-based detection techniques?
 * **RQ3: Usefulness for Developers:** Can the vulnerability knowledge generated by Vul-RAG help developers in manual vulnerability detection？
-* **RQ4: Bad Case Analysis:** Why does Vul-RAG fail in detecting some vulnerabilities?
-* **RQ5: Detecting Previously-Unknown Vulnerabilities:** How does Vul-RAG perform in detecting previously-unknown vulnerabilities on the latest release of Linux kernel?
+* **RQ4: Detecting Previously-Unknown Vulnerabilities:** How does Vul-RAG perform in detecting previously-unknown vulnerabilities on the latest release of Linux kernel?
 
-**RQ1(Compared to SOTA techniques):** We evaluated the effectiveness of Vul-RAG on vulnerability detection tasks compared to current state-of-the-art (SOTA) vulnerability detection techniques. The detailed detection outcome of Vul-RAG is in [vul_rag_result.json](./results/vul_rag_result.json), and the overall evaluation results are as follows.
+**RQ1(Compared to SOTA techniques):** We evaluated the effectiveness of Vul-RAG on vulnerability detection tasks compared to current state-of-the-art (SOTA) vulnerability detection techniques. The detailed detection outcome of Vul-RAG is in [vul_rag_result/](./results/vul_rag_result/), and the overall evaluation results are as follows.
 ![RQ1 result](images/RQ1%20result.png)
 
-**RQ2(Compared to GPT-4-based techniques):** We evaluated the usefulness of our knowledge-level RAG framework by conducting a comparative analysis with two baselines: the basic GPT-4 model, and the GPT4-based approach enhanced with code-level RAG. The experimental results of two baselines are placed in the folder [./results/baseline results](./results/baseline%20results/).
+**RQ2(Compared to GPT-4-based techniques):** We evaluated the usefulness of our knowledge-level RAG framework by conducting a comparative analysis with two baselines: the basic GPT-4o model, and the GPT4o-based approach enhanced with code-level RAG. The experimental results of two baselines are placed in the folder [./results/baseline results](./results/baseline%20results/).
 
 **RQ3(Usefulness for Developers):** We conducted a user study to investigate whether the vulnerability knowledge generated by Vul-RAG can help developers identify vulnerable code more precisely. The [user study](./user%20study/user_study.json) contains a total of 10 cases from the benchmark, two for each CWE category. The source code files of each case are in the directory [./user study/source code](./user%20study/source%20code/), and the raw results of the user study are in the directory [./user study/results](./user%20study/results/).
 
-**RQ4(Bad Case Analysis):** We conducted a manual analysis of all 19 FN and 21 FP cases within CWE-119 to discuss what factors contribute to the failure of Vul-RAG in accurately identifying true vulnerability behaviors.
-
-**RQ5(Detecting Previously-Unknown Vulnerabilities):** We further apply Vul-RAG on the latest Linux kernel release (v6.9.6, June 2024) for detecting previously-unknown vulnerabilities. As a result, Vul-RAG detects 10 previously-unknown bugs, and 5 of them have been confirmed by the Linux community. For the 5 confirmed bugs, we further write patches based on the fix suggestions provided by Vul-RAG, and four submitted patches have already been accepted by the paper submission time.
+**RQ4(Detecting Previously-Unknown Vulnerabilities):** We further apply Vul-RAG on the latest Linux kernel release (v6.9.6, June 2024) for detecting previously-unknown vulnerabilities. As a result, Vul-RAG detects 10 previously-unknown bugs, and 5 of them have been confirmed by the Linux community. For the 5 confirmed bugs, we further write patches based on the fix suggestions provided by Vul-RAG, and four submitted patches have already been accepted by the paper submission time.
