@@ -82,7 +82,7 @@ python -m spacy download en_core_web_sm
 ```
 
 ## Usage Steps
-1. **Prepare Dataset**: Create the data directory and output directory with subdirectories according to the directory structure specified in this README, and place the training dataset and test dataset (in the /benchmark folder of project [KnowledgeRAG4LLMVulD](https://github.com/KnowledgeRAG4LLMVulD/KnowledgeRAG4LLMVulD)) in the `data/train/` and `data/test/` directories respectively.
+1. **Prepare Dataset**: Create the data directory and output directory with subdirectories according to the directory structure specified in this README, and place the training dataset and test dataset (in the `/benchmark` folder of project [KnowledgeRAG4LLMVulD](https://github.com/KnowledgeRAG4LLMVulD/KnowledgeRAG4LLMVulD)) in the `data/train/` and `data/test/` directories respectively.
 2. **Configure API**: Replace the model's `api_key` and `base_url` in `utils/llm_client.py` with your own API key and base URL.
 3. **Extract Knowledge**: Run the `extract_knowledge.py` script to extract knowledge from the training dataset.
 4. **Perform Detection**: Run the `vulnerability_detect.py` script to detect vulnerabilities in the test dataset.
