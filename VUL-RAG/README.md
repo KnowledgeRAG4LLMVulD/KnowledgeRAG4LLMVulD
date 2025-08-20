@@ -58,6 +58,7 @@ This command uses the extracted knowledge base to detect vulnerabilities in the 
 - `--model_settings`: LLM model setting parameters.
 - `--early_return`: Return early if a clear solution behavior is found.
 - `--max_knowledge`: Maximum number of knowledge entries to use.
+- `--retrieve_by_code`: Whether to use only code for knowledge retrieve and detect.
 
 ### Calculate Evaluation Metrics
 ```bash
