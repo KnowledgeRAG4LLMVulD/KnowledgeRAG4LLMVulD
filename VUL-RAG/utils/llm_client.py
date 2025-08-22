@@ -14,7 +14,7 @@ class DeepseekClient:
         #     api_key=os.environ.get("OPENAI_API_KEY")
         # )
 
-    def generate_text(self, prompt,model_settings=None):
+    def generate_text(self, prompt,model_settings={}):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages = prompt,
@@ -37,7 +37,7 @@ class OpenaiClient:
             api_key=os.environ.get("OPENAI_API_KEY")
         )
 
-    def generate_text(self, prompt,model_settings=None):
+    def generate_text(self, prompt,model_settings={}):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages = prompt,
@@ -53,7 +53,7 @@ class QwenClient:
             api_key=os.environ.get("DASHSCOPE_API_KEY")
         )
 
-    def generate_text(self, prompt,model_settings=None):
+    def generate_text(self, prompt,model_settings={}):
         response = self.client.chat.completions.create(
             model = self.model_name,
             messages = prompt,
@@ -69,7 +69,7 @@ class ClaudeClient:
             api_key=os.environ.get("OPENAI_API_KEY")
         )
 
-    def generate_text(self, prompt,model_settings=None):
+    def generate_text(self, prompt,model_settings={}):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages = prompt,
