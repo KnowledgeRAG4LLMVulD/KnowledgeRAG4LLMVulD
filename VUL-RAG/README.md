@@ -30,7 +30,7 @@ This project is a vulnerability detection tool based on Large Language Models (L
 
 ### Knowledge Extraction
 ```bash
-python src/extract_knowledge.py --input_file_name linux_kernel_CWE-401_data.json --output_file_name linux_kernel_CWE-401_knowledge.json --model_name gpt-4o-mini --thread_pool_size 10 --resume --model_settings temperature=0.01
+python src/extract_knowledge.py --input_file_name linux_kernel_CWE-401_data.json --output_file_name linux_kernel_CWE-401_knowledge_demo.json --model_name gpt-4o-mini --thread_pool_size 10 --resume --model_settings temperature=0.01
 ```
 
 This command extracts vulnerability-related knowledge from the training dataset and saves it to the specified output file. Parameter descriptions:
