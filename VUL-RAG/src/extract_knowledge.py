@@ -94,7 +94,11 @@ explanation: \"The functions of the code snippet are: 1. 2. 3.\"
 
     # extract analysis prompt
     analysis_prompt = f"""{prefix_str}
-The correct way to fix it is by adding/deleting\n'''\n{modified_lines}\n'''\n."""
+The correct way to fix it is by adding/deleting
+'''
+{modified_lines}
+'''
+."""
 
     if modified_lines["added"] != []:
         analysis_prompt += f"""The code after modification is as follows:\n'''\n{code_after_change}\n'''\n"""
@@ -109,7 +113,7 @@ Here are some examples to guide you on the level of detail expected in your extr
 Example 1:
 {
     "vulnerability_behavior": {
-        'preconditions_for_vulnerability': 'Lack of proper handling for asynchronous events during device removal process.',
+        'vulnerability_cause_description': 'Lack of proper handling for asynchronous events during device removal process.',
         'trigger_condition': 'A physically proximate attacker unplugs a device while the removal function is executing, \
 leading to a race condition and use-after-free vulnerability.',
         'specific_code_behavior_causing_vulnerability': 'The code does not cancel pending work associated with a specific \
@@ -180,12 +184,12 @@ def extract_knowledge(args, item, output_data: List[Dict[str, Any]]) -> None:
         knowledge_extraction_output = generate_with_retry(messages, args.model_settings)
         # print("get knowledge extraction output")
         output_dict = get_dict(knowledge_extraction_output)
-        output_dict["GPT_analysis"] = analysis_output
-        output_dict["GPT_purpose"] = llm_client.extract_LLM_response_by_prefix(
+        output_dict["analysis"] = analysis_output
+        output_dict["purpose"] = llm_client.extract_LLM_response_by_prefix(
                         purpose_output,
                         "Function purpose:"
                     )
-        output_dict["GPT_function"] = llm_client.extract_LLM_response_by_prefix(
+        output_dict["function"] = llm_client.extract_LLM_response_by_prefix(
                         function_output,
                         "The functions of the code snippet are:"
                     )
@@ -199,7 +203,7 @@ def extract_knowledge(args, item, output_data: List[Dict[str, Any]]) -> None:
         if "solution" in output_dict["vulnerability_behavior"]:
             output_dict["solution"] = output_dict["vulnerability_behavior"]["solution"]
         
-        output_dict["preconditions_for_vulnerability"] = output_dict["vulnerability_behavior"]["preconditions_for_vulnerability"]
+        output_dict["vulnerability_cause_description"] = output_dict["vulnerability_behavior"]["vulnerability_cause_description"]
         output_dict["trigger_condition"] = output_dict["vulnerability_behavior"]["trigger_condition"]
         output_dict["specific_code_behavior_causing_vulnerability"] = output_dict["vulnerability_behavior"]["specific_code_behavior_causing_vulnerability"]
 
